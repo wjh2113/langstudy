@@ -14,10 +14,17 @@
             <DiffText :tokens="shadowOf(s.id).diff.tokens" :env="env" />
             <span :class="['pill', grade(shadowOf(s.id).diff.similarity)]">吻合 {{ Math.round(shadowOf(s.id).diff.similarity * 100) }}%</span>
             <PronBadge :turn="shadowOf(s.id)" />
+            <span v-if="shadowOf(s.id).shadowSync && shadowOf(s.id).lagSec != null" class="pill sync">
+              影子跟读 · 晚 {{ shadowOf(s.id).lagSec }} 秒 · 用时 {{ shadowOf(s.id).durationRatio }} 倍
+            </span>
           </div>
           <AnswerBox v-if="shadowing === s.id" compact :env="env" submit-label="保存跟读"
             placeholder="听完后点麦克风，跟着读这一句" @submit="(a) => saveShadow(s, a)" />
-          <button v-else class="link" @click="shadowing = s.id">{{ shadowOf(s.id) ? '再跟读一次' : '跟读' }}</button>
+          <div v-else class="sentence__actions">
+            <button class="link" @click="shadowing = s.id">{{ shadowOf(s.id) ? '再跟读一次' : '跟读' }}</button>
+            <ShadowSync :id="s.id" :text="s.text" :env="env" @play="tracker.count(s.id)"
+              @result="(t) => $emit('add-turn', { ...t, plays: tracker.plays[s.id] || 0 })" />
+          </div>
         </div>
       </li>
     </ol>
@@ -47,6 +54,7 @@ import AnswerBox from './AnswerBox.vue'
 import AnsweredCard from './AnsweredCard.vue'
 import DiffText from './DiffText.vue'
 import PronBadge from './PronBadge.vue'
+import ShadowSync from './ShadowSync.vue'
 import PlayButton from './PlayButton.vue'
 import TargetText from './TargetText.vue'
 import { playingId, playSequence, stop } from '../audio'
@@ -54,7 +62,7 @@ import { diffReference } from '../diff'
 
 export default {
   name: 'ArticlePractice',
-  components: { AnswerBox, AnsweredCard, DiffText, PlayButton, PronBadge, TargetText },
+  components: { AnswerBox, AnsweredCard, DiffText, PlayButton, PronBadge, ShadowSync, TargetText },
   props: {
     content: { type: Object, required: true },
     env: { type: Object, required: true },

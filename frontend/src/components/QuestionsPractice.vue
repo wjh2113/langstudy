@@ -33,7 +33,7 @@
       <template v-if="showTip">答题思路：{{ prompt.tip }}</template>
       <button v-else class="link" @click="showTip = true">看看答题思路</button>
     </p>
-    <AnswerBox :key="prompt.id" :env="env" @submit="save" />
+    <AnswerBox :key="prompt.id" :env="env" :hands-free="env.handsFree" :listen-signal="listen" @submit="save" />
     <button class="link link--muted" @click="next">{{ prompt.isFollow ? '跳过追问' : '跳过这题' }}</button>
     <p v-if="followError" class="error">{{ followError }}</p>
   </section>
@@ -72,6 +72,7 @@ export default {
     const showTip = ref(false)
     const followOn = ref(loadFollowOn())
     const followError = ref('')
+    const listen = ref(0) // bumped when the question has been read out (hands-free)
     let timer
 
     const turnOf = (id) => props.turns.find((t) => t.id === id)
@@ -106,7 +107,9 @@ export default {
       const text = prompt.value.text
       timer = setTimeout(() => {
         props.tracker.count(id)
-        play(id, text, { language: props.env.language, rate: props.env.rate }).catch(() => {})
+        play(id, text, { language: props.env.language, rate: props.env.rate })
+          .catch(() => {})
+          .finally(() => { if (prompt.value?.id === id) listen.value++ }) // your turn
       }, 350)
     }, { immediate: true })
     onBeforeUnmount(() => clearTimeout(timer))
@@ -156,7 +159,7 @@ export default {
       else next()
     }
 
-    return { revealed, idx, stage, showTip, followOn, followError, prompt, history, setFollowOn, next, save }
+    return { listen, revealed, idx, stage, showTip, followOn, followError, prompt, history, setFollowOn, next, save }
   },
 }
 </script>

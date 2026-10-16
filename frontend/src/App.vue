@@ -10,7 +10,12 @@
       </div>
       <button :class="['rail__item', { on: view === 'home' }]" @click="go('home')">新的练习</button>
       <button v-if="session && !report && view !== 'practice'" class="rail__item" @click="go('practice')">继续当前练习</button>
+      <button :class="['rail__item', { on: view === 'review' }]" @click="go('review')">
+        复习<span v-if="dueCount" class="badge">{{ dueCount }}</span>
+      </button>
+      <button :class="['rail__item', { on: view === 'accent' }]" @click="go('accent')">口音听辨</button>
       <button :class="['rail__item', { on: view === 'history' }]" @click="go('history')">历史记录</button>
+      <button :class="['rail__item', { on: view === 'notes' }]" @click="go('notes')">学习笔记</button>
       <button v-if="user.role === 'admin'" :class="['rail__item', { on: view === 'admin' }]" @click="go('admin')">用户与邀请</button>
       <button :class="['rail__item', { on: view === 'account' }]" @click="go('account')">账号 · {{ user.username }}</button>
       <p v-if="config" class="rail__foot">
@@ -24,13 +29,16 @@
       <div v-if="busy && view !== 'practice'" class="loading" role="status">
         <span class="loading__bar" />正在生成练习内容，大约需要 10–30 秒…
       </div>
-      <HomeView v-if="view === 'home'" :config="config" :prefs="prefs" :busy="busy" :error="error"
-        @update:prefs="setPrefs" @start="start" />
+      <HomeView v-if="view === 'home'" :config="config" :prefs="prefs" :busy="busy" :error="error" :accents="display.accents || {}"
+        @update:prefs="setPrefs" @update:accents="(a) => setDisplay({ accents: a })" @start="start" />
       <PracticeView v-else-if="view === 'practice' && session" :key="session.id" :session="session" :env="env"
-        :finishing="busy" :error="error" @update:display="setDisplay" @finish="finish" />
-      <ReportView v-else-if="view === 'report' && report" :report="report" :session="session" :env="env"
+        :finishing="busy" :error="error" @update:display="setDisplay" @update:accent="setAccent" @finish="finish" />
+      <ReviewView v-else-if="view === 'review'" :config="config" :env-for="envFor" :initial-language="prefs.language" />
+      <AccentQuizView v-else-if="view === 'accent'" :config="config" :env="envFor('en')" />
+      <ReportView v-else-if="view === 'report' && report" :report="report" :session="session" :env="env" @review="go('review')"
         @retry="retry" @home="go('home')" />
       <HistoryView v-else-if="view === 'history'" :is-admin="user.role === 'admin'" @open="openHistory" />
+      <NotesView v-else-if="view === 'notes'" :env="env" :env-for="envFor" @open-session="openHistory" />
       <AdminView v-else-if="view === 'admin' && user.role === 'admin'" :me="user" />
       <AccountView v-else-if="view === 'account'" :me="user" @logout="logout" />
     </div>
@@ -38,7 +46,7 @@
 </template>
 
 <script>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watchEffect } from 'vue'
 import AccountView from './components/AccountView.vue'
 import AdminView from './components/AdminView.vue'
 import AuthView from './components/AuthView.vue'
@@ -46,12 +54,16 @@ import HomeView from './components/HomeView.vue'
 import PracticeView from './components/PracticeView.vue'
 import ReportView from './components/ReportView.vue'
 import HistoryView from './components/HistoryView.vue'
+import NotesView from './components/NotesView.vue'
+import ReviewView from './components/ReviewView.vue'
+import AccentQuizView from './components/AccentQuizView.vue'
+import { dueCount, invalidate, refreshDue, resetCards } from './cards'
 import { api } from './api'
-import { setServerTTS, stop } from './audio'
+import { setServerTTS, setVoiceOptions, stop } from './audio'
 import { browserRecognitionSupported } from './useRecorder'
 
 const DEFAULT_PREFS = { language: 'en', level: 'intermediate', mode: 'questions', count: 5, topic: '' }
-const DEFAULT_DISPLAY = { rate: 1, hideText: false, showTranslation: false }
+const DEFAULT_DISPLAY = { rate: 1, hideText: false, showTranslation: false, accents: {} }
 
 function load(key, fallback) {
   try {
@@ -66,7 +78,9 @@ function save(key, value) {
 
 export default {
   name: 'App',
-  components: { AccountView, AdminView, AuthView, HomeView, PracticeView, ReportView, HistoryView },
+  components: {
+    AccentQuizView, AccountView, AdminView, AuthView, HomeView, PracticeView, ReportView, ReviewView, HistoryView, NotesView,
+  },
   setup() {
     const config = ref(null)
     const configError = ref('')
@@ -95,10 +109,12 @@ export default {
       authState.value = 'in'
       if (inviteFromUrl) history.replaceState(null, '', location.pathname)
       loadConfig()
+      refreshDue()
     }
 
     function signedOut() {
       stop()
+      resetCards()
       user.value = null
       session.value = null
       report.value = null
@@ -126,21 +142,33 @@ export default {
     onBeforeUnmount(() => window.removeEventListener('ls:unauthorized', signedOut))
 
     const setPrefs = (p) => { prefs.value = p; save('ls.prefs', p) }
-    const setDisplay = (d) => { display.value = d; save('ls.display', d) }
+    const setDisplay = (d) => { display.value = { ...display.value, ...d }; save('ls.display', display.value) }
+    // accent is remembered per language
+    const setAccent = (key) => setDisplay({ accents: { ...(display.value.accents || {}), [language.value]: key } })
 
     const language = computed(() => session.value?.content.language || prefs.value.language)
-    const env = computed(() => {
-      const meta = config.value?.languages.find((l) => l.code === language.value)
+    /** Everything components need to know about the target language and listening settings. */
+    function envFor(lang) {
+      const meta = config.value?.languages.find((l) => l.code === lang)
+      const accents = meta?.accents || []
+      const accentKey = display.value.accents?.[lang] || 'default'
+      const accent = accents.find((a) => a.key === accentKey) || accents[0]
       return {
         ...display.value,
-        language: language.value,
-        locale: meta?.sttLocale || 'en-US',
+        accents,
+        accent: accent?.key || 'default',
+        accentLocale: accent?.locale || null,
+        language: lang,
+        locale: meta?.sttLocale || (lang === 'ja' ? 'ja-JP' : 'en-US'),
         serverSTT: Boolean(config.value?.sttServer),
         recognitionSupported: browserRecognitionSupported,
         pronounceServer: Boolean(config.value?.pronounceServer),
-        textClass: language.value === 'ja' ? 't-ja' : 't-en',
+        textClass: lang === 'ja' ? 't-ja' : 't-en',
       }
-    })
+    }
+    const env = computed(() => envFor(language.value))
+
+    watchEffect(() => setVoiceOptions({ accent: env.value.accent, locale: env.value.accentLocale }))
 
     function go(v) {
       stop()
@@ -152,7 +180,9 @@ export default {
       busy.value = true
       error.value = ''
       try {
-        const res = await api.generate({ language: p.language, level: p.level, mode: p.mode, topic: p.topic, count: p.count })
+        const res = await api.generate({
+          language: p.language, level: p.level, mode: p.mode, topic: p.topic, count: p.count, focus: p.focus || '',
+        })
         session.value = res
         report.value = null
         go('practice')
@@ -168,8 +198,15 @@ export default {
       error.value = ''
       try {
         // eslint-disable-next-line no-unused-vars
-        const clean = turns.map(({ id, diff, audioUrl, audioBlob, pronPending, ...t }) => t)
+        // keep only recordings saved on the server (local blob: URLs die with the page)
+        const clean = turns.map(({ id, diff, audioUrl, audioBlob, pronPending, ...t }) => ({
+          ...t, audioUrl: String(audioUrl || '').startsWith('/api/') ? audioUrl : '',
+        }))
         report.value = await api.evaluate({ sessionId: session.value.id, turns: clean })
+        if (report.value.cardsAdded) {
+          invalidate(session.value.content.language)
+          refreshDue()
+        }
         go('report')
       } catch (e) {
         error.value = e.message
@@ -195,10 +232,10 @@ export default {
     }
 
     return {
-      authState, user, inviteFromUrl, onSignedIn, logout,
-      config, configError, view, prefs, session, report, busy, error, language, env,
+      authState, user, inviteFromUrl, onSignedIn, logout, dueCount,
+      config, configError, view, prefs, display, envFor, session, report, busy, error, language, env,
       recognitionSupported: browserRecognitionSupported,
-      setPrefs, setDisplay, go, start, finish, openHistory, retry,
+      setPrefs, setDisplay, setAccent, go, start, finish, openHistory, retry,
     }
   },
 }

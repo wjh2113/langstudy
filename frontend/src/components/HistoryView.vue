@@ -27,7 +27,7 @@
           <td>{{ modeNames[s.mode] }}</td>
           <td>
             <button class="link" @click="$emit('open', s.id)">{{ s.topic }}</button>
-            <span class="muted table__title">{{ s.title }}</span>
+            <span class="muted table__title">{{ s.title }}<span v-if="s.hasNotes" class="tag tag--sm">笔记</span></span>
           </td>
           <td>
             <strong v-if="s.done">{{ s.overall ?? '—' }}</strong>
@@ -71,7 +71,7 @@ export default {
       items, error, remove, load, showAll,
       trendOf: (l) => trend[l].filter((p) => p.overall != null),
       langNames: { en: 'English', ja: '日本語' },
-      modeNames: { article: '短文', dialogue: '情景对话', questions: '话题问答' },
+      modeNames: { article: '短文', dialogue: '情景对话', questions: '话题问答', chat: '自由对话', dictation: '精听填空' },
     }
   },
 }

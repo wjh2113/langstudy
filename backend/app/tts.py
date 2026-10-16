@@ -7,7 +7,7 @@ import asyncio
 import hashlib
 
 from . import config
-from .languages import get_language
+from .languages import get_accent, get_language
 
 
 class TTSError(RuntimeError):
@@ -42,14 +42,17 @@ async def _gateway(text: str, voice: str, rate: float) -> bytes:
         raise TTSError(str(e)) from e
 
 
-async def synthesize(text: str, language: str, voice_index: int = 0, rate: float = 1.0) -> bytes:
+async def synthesize(text: str, language: str, voice_index: int = 0, rate: float = 1.0, accent: str = "default") -> bytes:
     if not config.TTS_ENABLED:
         raise TTSError("服务端语音合成已关闭")
     text = text.strip()[:2000]
     if not text:
         raise TTSError("没有可朗读的文字")
     rate = max(0.5, min(rate, 1.5))
-    if config.tts_uses_gateway():
+    accent_voices, _ = get_accent(language, accent)
+    if accent_voices:  # a specific accent: always Edge regional voices
+        voices, provider = accent_voices, "edge"
+    elif config.tts_uses_gateway():
         voices, provider = config.GATEWAY_TTS_VOICES or [""], "gateway"
     else:
         voices, provider = get_language(language)["voices"], "edge"

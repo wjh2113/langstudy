@@ -7,12 +7,19 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import auth, config, db
+import re
+import shutil
+
+from . import auth, config, db, srs
+from .coach import recommend
+from .conversation import reply as chat_reply
 from .evaluate import evaluate
+from .mistakes import collect_mistakes
 from .followup import follow_up
 from .generate import generate
 from .languages import public_languages
 from .llm import LLMError
+from .notes import generate_notes
 from .stt import STTError, transcribe
 from .tts import TTSError, synthesize
 
@@ -90,14 +97,17 @@ def api_me(request: Request):
 @app.post("/api/auth/setup")
 def api_setup(req: Credentials, request: Request, response: Response):
     """Create the first account, which becomes the administrator."""
+    if db.count_users() > 0:
+        _bad("管理员已经创建过了，请直接登录", 409)
     try:
         username = auth.check_credentials(req.username, req.password)
-        user = db.create_admin(username, auth.hash_password(req.password))
     except auth.AuthError as e:
         _bad(e)
-    except ValueError as e:
+    try:
+        admin = db.create_admin(username, auth.hash_password(req.password))
+    except ValueError as e:  # someone else finished setup a moment earlier
         _bad(e, 409)
-    return _login_response(response, user, request)
+    return _login_response(response, admin, request)
 
 
 @app.post("/api/auth/login")
@@ -120,8 +130,6 @@ def api_register(req: RegisterReq, request: Request, response: Response):
     try:
         username = auth.check_credentials(req.username, req.password)
         user = db.register_with_invite(username, auth.hash_password(req.password), auth.normalize_code(req.inviteCode))
-    except auth.AuthError as e:
-        _bad(e)
     except ValueError as e:
         _bad(e)
     return _login_response(response, user, request)
@@ -204,9 +212,10 @@ def api_reset_password(user_id: int, admin: dict = Depends(admin_user)):
 class GenerateReq(BaseModel):
     language: str = "en"
     level: str = "intermediate"
-    mode: str = "questions"
-    topic: str
+    mode: str = "questions"  # empty with a focus = use the mode suited to that skill
+    topic: str = ""  # may be empty for a weak-skill drill (we pick one)
     count: int = 5
+    focus: str = ""  # listening | pronunciation | fluency | grammar | vocabulary | content
 
 
 class TTSReq(BaseModel):
@@ -214,6 +223,7 @@ class TTSReq(BaseModel):
     language: str = "en"
     voiceIndex: int = 0
     rate: float = 1.0
+    accent: str = "default"
 
 
 class Turn(BaseModel):
@@ -228,6 +238,10 @@ class Turn(BaseModel):
     plays: int = 0
     textHidden: bool = False
     followUp: bool = False  # answer to an AI follow-up question
+    audioUrl: str = ""  # saved recording (see /api/sessions/{id}/audio)
+    shadowSync: bool = False  # shadowing while the original plays
+    lagSec: Optional[float] = None
+    durationRatio: Optional[float] = None
     pronScore: Optional[float] = None  # gateway pronunciation score (reading a script)
     pronNote: str = ""
     pronIssues: List[dict] = Field(default_factory=list)
@@ -265,7 +279,7 @@ def get_config(_: dict = Depends(current_user)):
 @app.post("/api/generate")
 def api_generate(req: GenerateReq, user: dict = Depends(current_user)):
     try:
-        content = generate(req.language, req.level, req.mode, req.topic, req.count)
+        content = generate(req.language, req.level, req.mode, req.topic, req.count, req.focus)
     except ValueError as e:
         _bad(e)
     except LLMError as e:
@@ -284,10 +298,139 @@ def api_followup(req: FollowUpReq, user: dict = Depends(current_user)):
         _bad(e, 502)
 
 
+class ChatTurn(BaseModel):
+    role: str  # ai | user
+    text: str
+
+
+class ChatReplyReq(BaseModel):
+    sessionId: str
+    history: List[ChatTurn] = Field(default_factory=list)
+
+
+@app.post("/api/chat/reply")
+def api_chat_reply(req: ChatReplyReq, user: dict = Depends(current_user)):
+    session = _own_session(req.sessionId, user)
+    try:
+        return chat_reply(session["content"], [t.model_dump() for t in req.history])
+    except ValueError as e:
+        _bad(e)
+    except LLMError as e:
+        _bad(e, 502)
+
+
+@app.get("/api/coach/{language}")
+def api_coach(language: str, user: dict = Depends(current_user)):
+    return recommend(db.recent_results(user["id"], language))
+
+
+# ----------------------------------------------------------- recordings
+AUDIO_DIR = config.DATA_DIR / "audio"
+
+
+def _audio_dir(sid: str) -> Path:
+    if not re.fullmatch(r"[0-9a-f]{12}", sid):
+        _bad("练习记录不存在", 404)
+    return AUDIO_DIR / sid
+
+
+@app.post("/api/sessions/{sid}/audio")
+async def api_upload_audio(sid: str, key: str = Form(...), audio: UploadFile = File(...),
+                           user: dict = Depends(current_user)):
+    """Keep a recording with the session so it can be replayed from the report later."""
+    _own_session(sid, user)
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", key):
+        _bad("录音编号不合法")
+    data = await audio.read()
+    if not data or len(data) > MAX_AUDIO:
+        _bad("录音为空或太大")
+    ctype = audio.content_type or ""
+    ext = "mp4" if "mp4" in ctype else "ogg" if "ogg" in ctype else "webm"
+    folder = _audio_dir(sid)
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{key}.{ext}").write_bytes(data)
+    return {"url": f"/api/sessions/{sid}/audio/{key}.{ext}"}
+
+
+@app.get("/api/sessions/{sid}/audio/{name}")
+def api_get_audio(sid: str, name: str, user: dict = Depends(current_user)):
+    _own_session(sid, user)
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}\.(webm|mp4|ogg)", name):
+        _bad("录音不存在", 404)
+    path = _audio_dir(sid) / name
+    if not path.is_file():
+        _bad("录音不存在", 404)
+    return FileResponse(path, media_type={"webm": "audio/webm", "mp4": "audio/mp4", "ogg": "audio/ogg"}[name.rsplit(".", 1)[1]])
+
+
+# ------------------------------------------------------------------ cards
+class CardReq(BaseModel):
+    language: str
+    kind: str = "word"  # word | pattern | sentence
+    front: str
+    reading: str = ""
+    meaning: str = ""
+    example: str = ""
+    exampleTranslation: str = ""
+    extra: str = ""
+    sourceSession: str = ""
+
+
+class ReviewReq(BaseModel):
+    grade: str  # again | hard | good | easy
+
+
+def _own_card(card_id: int, user: dict) -> dict:
+    card = db.get_card(card_id)
+    if not card or card["userId"] != user["id"]:
+        _bad("卡片不存在", 404)
+    return card
+
+
+@app.get("/api/cards")
+def api_cards(language: Optional[str] = None, kind: Optional[str] = None, due: bool = False,
+              user: dict = Depends(current_user)):
+    return db.list_cards(user["id"], language, kind, due)
+
+
+@app.get("/api/cards/summary")
+def api_cards_summary(user: dict = Depends(current_user)):
+    return db.card_summary(user["id"])
+
+
+@app.post("/api/cards")
+def api_add_card(req: CardReq, user: dict = Depends(current_user)):
+    if req.kind not in ("word", "pattern", "sentence") or not req.front.strip():
+        _bad("卡片内容不完整")
+    card, created = db.add_card(
+        user["id"], req.language, req.kind, req.front[:500], reading=req.reading, meaning=req.meaning,
+        example=req.example, example_translation=req.exampleTranslation, extra=req.extra, source_session=req.sourceSession,
+    )
+    return {"card": card, "created": created}
+
+
+@app.post("/api/cards/{card_id}/review")
+def api_review_card(card_id: int, req: ReviewReq, user: dict = Depends(current_user)):
+    card = _own_card(card_id, user)
+    try:
+        interval, ease, reps, lapsed = srs.schedule(card["intervalDays"], card["ease"], card["reps"], req.grade)
+    except ValueError as e:
+        _bad(e)
+    db.save_review(card_id, interval, ease, reps, lapsed, srs.due_at(interval))
+    return {"intervalDays": interval, "dueAt": srs.due_at(interval)}
+
+
+@app.delete("/api/cards/{card_id}")
+def api_delete_card(card_id: int, user: dict = Depends(current_user)):
+    _own_card(card_id, user)
+    db.delete_card(card_id)
+    return {"ok": True}
+
+
 @app.post("/api/tts")
 async def api_tts(req: TTSReq, _: dict = Depends(current_user)):
     try:
-        audio = await synthesize(req.text, req.language, req.voiceIndex, req.rate)
+        audio = await synthesize(req.text, req.language, req.voiceIndex, req.rate, req.accent)
     except (ValueError, TTSError) as e:
         _bad(e, 502)
     return Response(content=audio, media_type="audio/mpeg", headers={"Cache-Control": "private, max-age=86400"})
@@ -335,6 +478,7 @@ def api_evaluate(req: EvaluateReq, user: dict = Depends(current_user)):
     except LLMError as e:
         _bad(e, 502)
     db.save_report(req.sessionId, turns, report)
+    report["cardsAdded"] = collect_mistakes(user["id"], req.sessionId, session["content"].get("language", "en"), report)
     return report
 
 
@@ -356,7 +500,30 @@ def api_session(sid: str, user: dict = Depends(current_user)):
 def api_delete_session(sid: str, user: dict = Depends(current_user)):
     _own_session(sid, user)
     db.delete_session(sid)
+    shutil.rmtree(_audio_dir(sid), ignore_errors=True)
     return {"ok": True}
+
+
+@app.get("/api/notes")
+def api_notes_list(user: dict = Depends(current_user)):
+    return db.list_notes(user["id"])
+
+
+@app.get("/api/sessions/{sid}/notes")
+def api_get_notes(sid: str, user: dict = Depends(current_user)):
+    _own_session(sid, user)
+    return db.get_notes(sid) or {"notes": None, "generatedAt": None}
+
+
+@app.post("/api/sessions/{sid}/notes")
+def api_generate_notes(sid: str, user: dict = Depends(current_user)):
+    """Generate (or regenerate, replacing the saved copy) the topic's study notes."""
+    session = _own_session(sid, user)
+    try:
+        notes = generate_notes(session["content"])
+    except LLMError as e:
+        _bad(e, 502)
+    return {"notes": notes, "generatedAt": db.save_notes(sid, notes)}
 
 
 @app.get("/api/progress/{language}")
@@ -374,17 +541,15 @@ DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
 def frontend_file(path: str) -> Path:
-    """A file inside the built frontend, or index.html. Never resolves outside DIST."""
+    """File under DIST for a URL path; anything else (incl. ../ escapes) gets index.html."""
     root = DIST.resolve()
-    rel = (path or "").replace("\\", "/").lstrip("/")
-    candidate = (root / rel).resolve() if rel else root / "index.html"
-    try:
-        candidate.relative_to(root)
-    except ValueError:
-        candidate = root / "index.html"
-    if rel and candidate.is_file():
-        return candidate
-    return root / "index.html"
+    index = root / "index.html"
+    if not path:
+        return index
+    target = (root / path).resolve()
+    if target.is_file() and target.is_relative_to(root):
+        return target
+    return index
 
 
 if DIST.exists():

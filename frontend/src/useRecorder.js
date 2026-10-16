@@ -18,8 +18,15 @@ const SR_ERRORS = {
   'language-not-supported': '浏览器不支持这个语言的识别，请在后端配置服务端识别。',
 }
 
-/** @param {() => {locale: string, language: string, serverSTT: boolean}} getEnv */
-export function useRecorder(getEnv) {
+const SILENCE_MS = 1500 // hands-free: this long a pause after speaking ends the answer
+const NO_SPEECH_MS = 8000 // hands-free: give up if nothing is said
+const MAX_MS = 90000
+
+/**
+ * @param {() => {locale: string, language: string, serverSTT: boolean}} getEnv
+ * @param {{ onAutoStop?: () => void }} options  onAutoStop fires once when hands-free mode decides the answer is over
+ */
+export function useRecorder(getEnv, options = {}) {
   const state = ref('idle') // idle | recording | processing
   const level = ref(0)
   const interim = ref('')
@@ -39,7 +46,8 @@ export function useRecorder(getEnv) {
     cleanup()
   })
 
-  async function start() {
+  /** autoStop: end automatically after a pause (hands-free mode). */
+  async function start({ autoStop = false } = {}) {
     const { locale, language, serverSTT } = getEnv()
     error.value = ''
     interim.value = ''
@@ -58,7 +66,7 @@ export function useRecorder(getEnv) {
       error.value = SR_ERRORS['not-allowed']
       return false
     }
-    s = { stream, chunks: [], finals: [], confidences: [], startedAt: performance.now(), language, serverSTT }
+    s = { stream, chunks: [], finals: [], confidences: [], startedAt: performance.now(), language, serverSTT, autoStop }
 
     // level meter + voice activity
     const AC = window.AudioContext || window.webkitAudioContext
@@ -81,6 +89,13 @@ export function useRecorder(getEnv) {
         s.lastVoice = now
       }
       level.value = Math.min(1, rms * 6)
+      if (s.autoStop && !s.autoStopped) {
+        const quiet = s.firstVoice ? now - s.lastVoice > SILENCE_MS : now - s.startedAt > NO_SPEECH_MS
+        if (quiet || now - s.startedAt > MAX_MS) {
+          s.autoStopped = true
+          options.onAutoStop?.()
+        }
+      }
       s.raf = requestAnimationFrame(tick)
     }
     tick()
@@ -94,8 +109,8 @@ export function useRecorder(getEnv) {
       s.recorder = null
     }
 
-    // browser recognition
-    if (!serverSTT && SR) {
+    // browser recognition: the transcript itself, or (with server recognition) just live feedback
+    if (SR) {
       const rec = new SR()
       const session = s
       rec.lang = locale
@@ -113,6 +128,7 @@ export function useRecorder(getEnv) {
         interim.value = text
       }
       rec.onerror = (e) => {
+        if (serverSTT) { session.recError = e.error; return } // live text is a bonus; ignore failures
         if (e.error !== 'no-speech' && e.error !== 'aborted') {
           session.recError = SR_ERRORS[e.error] || `语音识别出错：${e.error}`
           error.value = session.recError
@@ -146,6 +162,10 @@ export function useRecorder(getEnv) {
     })
     const recognised = new Promise((resolve) => {
       if (!session.recognition) return resolve()
+      if (session.serverSTT) { // live text only: don't wait for it
+        try { session.recognition.abort() } catch { /* ignore */ }
+        return resolve()
+      }
       session.recEnded = resolve
       try { session.recognition.stop() } catch { resolve() }
       setTimeout(resolve, 2500) // don't hang if onend never fires
@@ -172,7 +192,10 @@ export function useRecorder(getEnv) {
       }
     }
     state.value = 'idle'
-    return { text, confidence, durationSec, audioBlob: blob, audioUrl: blob ? URL.createObjectURL(blob) : null }
+    return {
+      text, confidence, durationSec, audioBlob: blob, audioUrl: blob ? URL.createObjectURL(blob) : null,
+      startedAt: session.startedAt, voiceStartAt: session.firstVoice || null, // for shadowing lag
+    }
   }
 
   return { state, level, interim, error, start, stop }

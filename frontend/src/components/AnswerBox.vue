@@ -16,10 +16,12 @@
       </div>
       <div class="answer__live">
         <p v-if="rec.state.value === 'recording'" class="hint">
-          正在听…说完点一下停止<span v-if="rec.interim.value" class="interim">{{ rec.interim.value }}</span>
+          {{ autoMode ? '正在听…说完停顿一下会自动提交' : '正在听…说完点一下停止' }}<span v-if="rec.interim.value" class="interim">{{ rec.interim.value }}</span>
         </p>
         <p v-else-if="rec.state.value === 'processing'" class="hint">正在识别…</p>
-        <p v-else-if="!take" class="hint">{{ placeholder || '点麦克风开始说，说完再点一下' }}</p>
+        <p v-else-if="!take" class="hint">
+          {{ placeholder || (handsFree ? '免手动：轮到你时会自动开始听，说完停顿一下就提交' : '点麦克风开始说，说完再点一下') }}
+        </p>
         <div v-if="take && rec.state.value === 'idle'" class="take">
           <p :class="['take__text', env.textClass]">
             <template v-if="take.text">{{ take.text }}</template>
@@ -47,7 +49,7 @@
 </template>
 
 <script>
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
 import { useRecorder } from '../useRecorder'
 import { stop as stopAudio } from '../audio'
@@ -64,6 +66,8 @@ export default {
     compact: { type: Boolean, default: false },
     submitLabel: { type: String, default: '提交回答' },
     placeholder: { type: String, default: '' },
+    handsFree: { type: Boolean, default: false }, // start on listenSignal, submit after a pause
+    listenSignal: { type: Number, default: 0 }, // parent bumps this when it's the learner's turn
   },
   emits: ['submit'],
   setup(props, { emit }) {
@@ -71,7 +75,8 @@ export default {
     const take = ref(null)
     const text = ref('')
     const textEl = ref(null)
-    const rec = useRecorder(() => props.env)
+    const autoMode = ref(false) // this recording was started hands-free
+    const rec = useRecorder(() => props.env, { onAutoStop: () => finishAuto() })
     const ring = computed(() => (rec.state.value === 'recording' ? 1 + rec.level.value * 0.55 : 1))
 
     async function switchToText() {
@@ -87,7 +92,27 @@ export default {
       } else if (rec.state.value === 'idle') {
         stopAudio()
         take.value = null
+        autoMode.value = false
         await rec.start()
+      }
+    }
+
+    // hands-free: the parent signals "your turn" (usually right after the AI finishes speaking)
+    watch(() => props.listenSignal, async () => {
+      if (!props.handsFree || tab.value !== 'voice' || rec.state.value !== 'idle' || take.value) return
+      autoMode.value = true
+      await rec.start({ autoStop: true })
+    })
+
+    async function finishAuto() {
+      if (rec.state.value !== 'recording') return
+      const result = await rec.stop()
+      if (!result) return
+      if (result.text) {
+        take.value = result
+        submitVoice() // no click needed
+      } else {
+        take.value = result // nothing heard: leave it for the learner to retry
       }
     }
 
@@ -103,7 +128,7 @@ export default {
       text.value = ''
     }
 
-    return { tab, take, text, textEl, rec, ring, switchToText, toggleRecord, submitVoice, submitText }
+    return { tab, take, text, textEl, rec, ring, autoMode, switchToText, toggleRecord, submitVoice, submitText }
   },
 }
 </script>

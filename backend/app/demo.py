@@ -130,3 +130,103 @@ def sample_judgement(turns, metrics, obj, has_voice) -> dict:
         ],
         "vocabulary": [],
     }
+
+
+SAMPLE_NOTES = {
+    "en": {
+        "summary": "（演示内容）围绕“新工作”话题，掌握入职相关词汇和描述感受变化的说法。",
+        "vocabulary": [
+            {"word": "welcome", "reading": "/ˈwelkəm/", "pos": "动词", "meaning": "欢迎", "example": "My manager welcomed me with a cup of coffee.", "exampleTranslation": "经理端着一杯咖啡欢迎我。"},
+            {"word": "introduce someone to", "reading": "", "pos": "短语", "meaning": "把某人介绍给……", "example": "She introduced me to the team.", "exampleTranslation": "她把我介绍给团队。"},
+            {"word": "show someone around", "reading": "", "pos": "短语", "meaning": "带某人参观", "example": "Let me show you around the office.", "exampleTranslation": "我带你参观一下办公室。"},
+            {"word": "take notes", "reading": "", "pos": "短语", "meaning": "记笔记", "example": "I took a lot of notes in the meeting.", "exampleTranslation": "我在会上记了很多笔记。"},
+            {"word": "confident", "reading": "/ˈkɑːnfɪdənt/", "pos": "形容词", "meaning": "自信的", "example": "By Friday, I felt more confident.", "exampleTranslation": "到周五，我更有信心了。"},
+        ],
+        "grammar": [
+            {"point": "一般过去时讲述经历", "explanation": "讲已经发生的经历用一般过去时，规则动词加 -ed，不规则动词要单独记。", "examples": [{"text": "I started a new job last Monday.", "translation": "我上周一开始了新工作。"}, {"text": "Everyone spoke quickly.", "translation": "大家说话都很快。"}], "pitfall": "spoke 不要说成 speaked。"},
+            {"point": "比较级表达变化", "explanation": "用 more + 形容词 / 形容词-er 描述感受的变化，可加 much 加强。", "examples": [{"text": "I felt much more comfortable.", "translation": "我感觉自在多了。"}], "pitfall": ""},
+        ],
+        "patterns": [
+            {"pattern": "By + 时间, I felt + 形容词", "usage": "描述到某个时间点时的感受", "examples": [{"text": "By the end of the week, I felt at home.", "translation": "到周末我已经很适应了。"}]},
+            {"pattern": "..., so I + 动作", "usage": "说明原因和随之采取的行动", "examples": [{"text": "The meeting was fast, so I took notes.", "translation": "会议节奏快，所以我记了笔记。"}]},
+        ],
+    },
+    "ja": {
+        "summary": "（演示内容）围绕“周末”话题，掌握描述日常习惯和列举活动的说法。",
+        "vocabulary": [
+            {"word": "散歩", "reading": "さんぽ", "pos": "名词・サ变动词", "meaning": "散步", "example": "週末によく公園を散歩します。", "exampleTranslation": "周末经常在公园散步。"},
+            {"word": "気持ちいい", "reading": "きもちいい", "pos": "形容词", "meaning": "舒服的", "example": "朝の空気は気持ちいいです。", "exampleTranslation": "早上的空气很舒服。"},
+            {"word": "人気", "reading": "にんき", "pos": "名词", "meaning": "受欢迎", "example": "このパンは人気があります。", "exampleTranslation": "这个面包很受欢迎。"},
+        ],
+        "grammar": [
+            {"point": "〜たり〜たりする", "explanation": "列举几个有代表性的动作，暗示还有别的。动词た形 + り。", "examples": [{"text": "本を読んだり、映画を見たりします。", "translation": "看看书、看看电影。"}], "pitfall": "两个动词都要加たり，最后要有する。"},
+            {"point": "〜と（条件）", "explanation": "前项发生，后项自然随之发生。", "examples": [{"text": "朝早く行くと、空気がきれいです。", "translation": "早点去的话空气很好。"}], "pitfall": ""},
+        ],
+        "patterns": [
+            {"pattern": "〜のあとは、〜ます", "usage": "按顺序讲做了什么", "examples": [{"text": "散歩のあとは、カフェに行きます。", "translation": "散步之后去咖啡店。"}]},
+        ],
+    },
+}
+
+
+def sample_notes(language: str) -> dict:
+    import copy
+
+    return copy.deepcopy(SAMPLE_NOTES.get(language, SAMPLE_NOTES["en"]))
+
+
+# ---- demo content for free chat and dictation ----
+SAMPLES["en"]["chat"] = {
+    "title": "Coffee Chat with a New Colleague",
+    "scene": "你刚入职，在茶水间遇到一位同事，和他随便聊聊。",
+    "aiRole": {"name": "Alex", "description": "热情的老同事"},
+    "userRole": {"name": "You", "description": "新入职的员工"},
+    "goal": "介绍你自己，聊聊你的工作和周末，并约对方下次一起吃午饭",
+    "opening": "Hey, you must be the new team member! I'm Alex. How's your first week going so far?",
+    "openingTranslation": "嘿，你一定是新来的同事吧！我是 Alex。第一周过得怎么样？",
+}
+SAMPLES["ja"]["chat"] = {
+    "title": "同僚とのランチ",
+    "scene": "你在日本公司上班，午休时和同事一起吃饭聊天。",
+    "aiRole": {"name": "田中さん", "description": "友好的同事"},
+    "userRole": {"name": "あなた", "description": "入职不久的员工"},
+    "goal": "聊聊你的家乡和爱好，问问对方周末的安排",
+    "opening": "お疲れさまです。もう日本の生活には慣れましたか。",
+    "openingTranslation": "辛苦了。已经习惯日本的生活了吗？",
+}
+SAMPLES["en"]["dictation"] = {
+    "title": "A Busy Morning",
+    "titleTranslation": "忙碌的早晨",
+    "sentences": [
+        {"text": "I usually wake up at six thirty on weekdays.", "translation": "我工作日通常六点半起床。", "blanks": ["six thirty"]},
+        {"text": "After a quick shower, I make a cup of coffee.", "translation": "快速冲个澡后，我泡一杯咖啡。", "blanks": ["shower"]},
+        {"text": "The train to the office takes about forty minutes.", "translation": "去公司的火车大约要四十分钟。", "blanks": ["forty", "office"]},
+        {"text": "I often read the news or listen to a podcast.", "translation": "我常常看新闻或听播客。", "blanks": ["podcast"]},
+        {"text": "By nine o'clock, I'm at my desk and ready to work.", "translation": "九点之前，我已经坐在桌前准备工作。", "blanks": ["desk"]},
+    ],
+}
+SAMPLES["ja"]["dictation"] = {
+    "title": "朝の時間",
+    "titleTranslation": "早上的时间",
+    "sentences": [
+        {"text": "毎朝六時半に起きます。", "translation": "每天早上六点半起床。", "blanks": ["六時半"]},
+        {"text": "朝ごはんはパンとコーヒーです。", "translation": "早饭是面包和咖啡。", "blanks": ["コーヒー"]},
+        {"text": "駅まで歩いて十分かかります。", "translation": "走到车站要十分钟。", "blanks": ["十分"]},
+        {"text": "電車の中で本を読みます。", "translation": "在电车里看书。", "blanks": ["電車"]},
+    ],
+}
+
+DEMO_REPLIES = {
+    "en": [
+        ("That sounds great! What do you like most about the job so far?", "听起来不错！到目前为止你最喜欢这份工作的哪一点？"),
+        ("Interesting. And what do you usually do on weekends?", "有意思。那你周末一般做什么？"),
+        ("Nice! We should grab lunch together sometime. Are you free this Friday?", "不错！我们找时间一起吃午饭吧。你这周五有空吗？"),
+        ("Perfect, see you on Friday then. It was great talking to you!", "太好了，那周五见。和你聊天很开心！"),
+    ],
+    "ja": [
+        ("そうですか。出身はどちらですか。", "这样啊。你是哪里人？"),
+        ("いいところですね。趣味は何ですか。", "是个好地方呢。你的爱好是什么？"),
+        ("素敵ですね。週末は何をする予定ですか。", "真不错。周末打算做什么？"),
+        ("楽しそうですね。また今度ゆっくり話しましょう。", "听起来很开心。下次再慢慢聊吧。"),
+    ],
+}

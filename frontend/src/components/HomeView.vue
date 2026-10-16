@@ -13,6 +13,26 @@
     </div>
     <p v-if="error" class="error">{{ error }}</p>
 
+    <section v-if="coach && (coach.level || coach.weakest)" class="coach">
+      <div v-if="coach.level" class="coach__row">
+        <span class="coach__label">难度</span>
+        <p>{{ coach.reason }}</p>
+        <button v-if="coach.change && prefs.level !== coach.level" type="button" class="btn btn--ghost"
+          @click="update({ level: coach.level })">改为{{ levelName(coach.level) }}</button>
+        <span v-else-if="coach.change && autoApplied" class="tag">已自动调整</span>
+      </div>
+      <div v-if="coach.weakest" class="coach__row">
+        <span class="coach__label">薄弱项</span>
+        <p>最近「{{ coach.weakest.name }}」平均 {{ coach.weakest.score }} 分，是你最弱的一项。</p>
+        <button type="button" class="btn btn--accent" :disabled="busy"
+          @click="$emit('start', { ...prefs, topic: '', mode: '', focus: coach.weakest.key })">专项练一组</button>
+      </div>
+      <label class="switch coach__auto">
+        <input type="checkbox" :checked="prefs.autoLevel" @change="update({ autoLevel: $event.target.checked })" />
+        <span>按最近成绩自动调节难度</span>
+      </label>
+    </section>
+
     <div class="options">
       <fieldset class="field">
         <legend>语言</legend>
@@ -32,6 +52,12 @@
         </div>
       </fieldset>
 
+      <fieldset v-if="accentList.length > 1" class="field">
+        <legend>听力口音</legend>
+        <AccentSelect :accents="accentList" :model-value="accents[prefs.language] || 'default'"
+          @update:model-value="(k) => $emit('update:accents', { ...accents, [prefs.language]: k })" />
+      </fieldset>
+
       <fieldset class="field field--wide">
         <legend>练习形式</legend>
         <div class="modes">
@@ -43,7 +69,7 @@
         </div>
       </fieldset>
 
-      <fieldset v-if="prefs.mode !== 'dialogue'" class="field">
+      <fieldset v-if="prefs.mode === 'questions' || prefs.mode === 'article'" class="field">
         <legend>{{ prefs.mode === 'article' ? '理解题数量' : '问题数量' }}</legend>
         <div class="seg">
           <button v-for="n in [3, 5, 8]" :key="n" type="button" :class="{ on: prefs.count === n }" @click="update({ count: n })">{{ n }}</button>
@@ -58,12 +84,16 @@
 </template>
 
 <script>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { api } from '../api'
+import AccentSelect from './AccentSelect.vue'
 
 const MODES = [
   { key: 'questions', name: '话题问答', desc: '一问一答，适合面试、自我介绍、聊观点' },
   { key: 'dialogue', name: '情景对话', desc: '和 AI 分角色对话，练习真实场景应答' },
-  { key: 'article', name: '短文', desc: '听一段短文，逐句跟读，再回答理解题' },
+  { key: 'article', name: '短文', desc: '听一段短文，逐句跟读或影子跟读，再回答理解题' },
+  { key: 'chat', name: '自由对话', desc: '不设剧本，AI 根据你说的一直聊下去' },
+  { key: 'dictation', name: '精听填空', desc: '听录音把挖掉的词填上，专练听力细节' },
 ]
 
 const SUGGESTIONS = {
@@ -73,19 +103,39 @@ const SUGGESTIONS = {
 
 export default {
   name: 'HomeView',
+  components: { AccentSelect },
   props: {
+    accents: { type: Object, default: () => ({}) },
     config: { type: Object, default: null },
     prefs: { type: Object, required: true },
     busy: { type: Boolean, default: false },
     error: { type: String, default: '' },
   },
-  emits: ['update:prefs', 'start'],
+  emits: ['update:prefs', 'update:accents', 'start'],
   setup(props, { emit }) {
     const topic = ref(props.prefs.topic || '')
     const languages = computed(() => props.config?.languages || [])
+    const accentList = computed(() => (languages.value.find((l) => l.code === props.prefs.language) || {}).accents || [])
     const levels = computed(() => (languages.value.find((l) => l.code === props.prefs.language) || languages.value[0])?.levels || [])
 
     const update = (patch) => emit('update:prefs', { ...props.prefs, ...patch })
+
+    // coaching: suggested difficulty + weakest skill for the selected language
+    const coach = ref(null)
+    const autoApplied = ref(false)
+    const levelName = (k) => ({ beginner: '入门', intermediate: '中级', advanced: '高级' })[k] || k
+    watch(() => props.prefs.language, async (lang) => {
+      coach.value = null
+      try {
+        const c = await api.coach(lang)
+        if (lang !== props.prefs.language) return
+        coach.value = c
+        if (props.prefs.autoLevel && c.level && c.change && props.prefs.level !== c.level) {
+          update({ level: c.level })
+          autoApplied.value = true
+        }
+      } catch { /* coaching is optional */ }
+    }, { immediate: true })
 
     function submit() {
       const t = topic.value.trim()
@@ -95,7 +145,7 @@ export default {
       emit('start', next)
     }
 
-    return { topic, languages, levels, modes: MODES, suggestions: SUGGESTIONS, update, submit }
+    return { coach, autoApplied, levelName, topic, languages, levels, accentList, modes: MODES, suggestions: SUGGESTIONS, update, submit }
   },
 }
 </script>

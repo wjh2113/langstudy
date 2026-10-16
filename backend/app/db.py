@@ -16,25 +16,23 @@ def _conn():
     conn = sqlite3.connect(config.DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 5000")
     return conn
 
 
 @contextmanager
-def _immediate():
-    """Write transaction that takes the lock before any check, so two requests can't both pass it."""
-    conn = sqlite3.connect(config.DB_PATH, timeout=10, isolation_level=None)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 5000")
+def _exclusive():
+    """A write transaction that takes the database lock up front, so a check
+    (e.g. "no admin yet", "invite has uses left") and the write that depends on it
+    can't interleave with another request doing the same."""
+    conn = _conn()
+    conn.isolation_level = None
     try:
         conn.execute("BEGIN IMMEDIATE")
-        try:
-            yield conn
-            conn.execute("COMMIT")
-        except Exception:
-            conn.execute("ROLLBACK")
-            raise
+        yield conn
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
     finally:
         conn.close()
 
@@ -73,6 +71,24 @@ def init():
                 note TEXT,
                 revoked INTEGER NOT NULL DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS cards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                language TEXT NOT NULL,
+                kind TEXT NOT NULL,                -- word | pattern | sentence
+                front TEXT NOT NULL,               -- what to say / recognise (target language)
+                reading TEXT, meaning TEXT, example TEXT, example_translation TEXT,
+                extra TEXT,                        -- sentence cards: what the learner originally said
+                source_session TEXT,
+                created_at TEXT NOT NULL,
+                due_at TEXT NOT NULL,
+                interval_days REAL NOT NULL DEFAULT 0,
+                ease REAL NOT NULL DEFAULT 2.5,
+                reps INTEGER NOT NULL DEFAULT 0,
+                lapses INTEGER NOT NULL DEFAULT 0,
+                last_reviewed_at TEXT,
+                UNIQUE (user_id, language, kind, front)
+            );
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 created_at TEXT NOT NULL,
@@ -87,6 +103,9 @@ def init():
         cols = {r["name"] for r in c.execute("PRAGMA table_info(sessions)")}
         if "user_id" not in cols:  # upgrade from the single-user version
             c.execute("ALTER TABLE sessions ADD COLUMN user_id INTEGER")
+        if "notes" not in cols:  # study notes (vocabulary / grammar / patterns)
+            c.execute("ALTER TABLE sessions ADD COLUMN notes TEXT")
+            c.execute("ALTER TABLE sessions ADD COLUMN notes_at TEXT")
 
 
 # ------------------------------------------------------------------ users
@@ -106,7 +125,7 @@ def count_users() -> int:
 
 def create_admin(username: str, password_hash: str) -> dict:
     """First account. Claims practice records made before accounts existed."""
-    with _immediate() as c:
+    with _exclusive() as c:
         if c.execute("SELECT COUNT(*) FROM users").fetchone()[0]:
             raise ValueError("管理员已经创建过了，请直接登录")
         cur = c.execute(
@@ -118,28 +137,19 @@ def create_admin(username: str, password_hash: str) -> dict:
 
 
 def register_with_invite(username: str, password_hash: str, code: str) -> dict:
-    """Create a user and consume one use of the invite in one locked transaction."""
-    with _immediate() as c:
+    """Create a user and consume one use of the invite in one transaction."""
+    with _exclusive() as c:
         inv = c.execute("SELECT * FROM invites WHERE code=?", (code,)).fetchone()
         problem = invite_problem(inv)
         if problem:
             raise ValueError(problem)
         if c.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
             raise ValueError("这个用户名已经被注册了")
-        now = _now()
-        spent = c.execute(
-            """UPDATE invites SET uses = uses + 1
-               WHERE code=? AND revoked=0 AND uses < max_uses
-                 AND (expires_at IS NULL OR expires_at >= ?)""",
-            (code, now),
-        )
-        if spent.rowcount != 1:
-            inv = c.execute("SELECT * FROM invites WHERE code=?", (code,)).fetchone()
-            raise ValueError(invite_problem(inv) or "这个邀请码已经用完了")
         cur = c.execute(
             "INSERT INTO users (username, password_hash, role, invited_by, invite_code, created_at) VALUES (?, ?, 'user', ?, ?, ?)",
-            (username, password_hash, inv["created_by"], code, now),
+            (username, password_hash, inv["created_by"], code, _now()),
         )
+        c.execute("UPDATE invites SET uses = uses + 1 WHERE code=?", (code,))
         return _user(c.execute("SELECT * FROM users WHERE id=?", (cur.lastrowid,)).fetchone())
 
 
@@ -306,14 +316,14 @@ def list_sessions(user_id=None, limit: int = 200):
     with _conn() as c:
         rows = c.execute(
             f"""SELECT s.id, s.created_at, s.language, s.level, s.mode, s.topic, s.title, s.overall,
-                       s.report IS NOT NULL AS done, u.username
+                       s.report IS NOT NULL AS done, s.notes IS NOT NULL AS has_notes, u.username
                 FROM sessions s LEFT JOIN users u ON u.id=s.user_id {where}
                 ORDER BY s.created_at DESC LIMIT ?""",
             (*args, limit),
         ).fetchall()
     return [
         {**{k: r[k] for k in ("id", "language", "level", "mode", "topic", "title", "overall", "username")},
-         "createdAt": r["created_at"], "done": bool(r["done"])}
+         "createdAt": r["created_at"], "done": bool(r["done"]), "hasNotes": bool(r["has_notes"])}
         for r in rows
     ]
 
@@ -332,6 +342,134 @@ def dimension_history(user_id: int, language: str, limit: int = 20):
         out.append({"createdAt": r["created_at"], "overall": rep.get("overall"),
                     "dims": {d["key"]: d["score"] for d in rep.get("dimensions", [])}})
     return out
+
+
+def save_notes(sid: str, notes: dict) -> str:
+    at = _now()
+    with _conn() as c:
+        c.execute("UPDATE sessions SET notes=?, notes_at=? WHERE id=?", (json.dumps(notes, ensure_ascii=False), at, sid))
+    return at
+
+
+def get_notes(sid: str):
+    with _conn() as c:
+        row = c.execute("SELECT notes, notes_at FROM sessions WHERE id=?", (sid,)).fetchone()
+    if not row or not row["notes"]:
+        return None
+    return {"notes": json.loads(row["notes"]), "generatedAt": row["notes_at"]}
+
+
+def list_notes(user_id: int):
+    """A user's sessions that have saved study notes, newest notes first."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT id, language, level, mode, topic, title, notes, notes_at, report IS NOT NULL AS done "
+            "FROM sessions WHERE user_id=? AND notes IS NOT NULL ORDER BY notes_at DESC",
+            (user_id,),
+        ).fetchall()
+    out = []
+    for r in rows:
+        n = json.loads(r["notes"])
+        out.append({
+            "id": r["id"], "language": r["language"], "level": r["level"], "mode": r["mode"], "topic": r["topic"],
+            "title": r["title"], "generatedAt": r["notes_at"], "done": bool(r["done"]), "summary": n.get("summary", ""),
+            "counts": {k: len(n.get(k, [])) for k in ("vocabulary", "grammar", "patterns")},
+        })
+    return out
+
+
+def recent_results(user_id: int, language: str, limit: int = 10):
+    """Newest-first finished sessions for coaching: level, overall and per-dimension scores."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT level, report FROM sessions WHERE user_id=? AND language=? AND report IS NOT NULL "
+            "ORDER BY created_at DESC LIMIT ?",
+            (user_id, language, limit),
+        ).fetchall()
+    out = []
+    for r in rows:
+        rep = json.loads(r["report"])
+        out.append({"level": r["level"], "overall": rep.get("overall"),
+                    "dims": {d["key"]: d["score"] for d in rep.get("dimensions", [])}})
+    return out
+
+
+# ------------------------------------------------------------------ cards
+_CARD_FIELDS = ("reading", "meaning", "example", "example_translation", "extra", "source_session")
+
+
+def _card(r):
+    return {
+        "id": r["id"], "language": r["language"], "kind": r["kind"], "front": r["front"],
+        "reading": r["reading"] or "", "meaning": r["meaning"] or "", "example": r["example"] or "",
+        "exampleTranslation": r["example_translation"] or "", "extra": r["extra"] or "",
+        "sourceSession": r["source_session"], "createdAt": r["created_at"], "dueAt": r["due_at"],
+        "intervalDays": r["interval_days"], "reps": r["reps"], "lapses": r["lapses"],
+        "lastReviewedAt": r["last_reviewed_at"],
+    }
+
+
+def add_card(user_id: int, language: str, kind: str, front: str, **fields) -> tuple:
+    """Insert a card; returns (card, created). An existing identical card is returned unchanged."""
+    front = (front or "").strip()
+    with _conn() as c:
+        cur = c.execute(
+            f"INSERT OR IGNORE INTO cards (user_id, language, kind, front, {', '.join(_CARD_FIELDS)}, created_at, due_at) "
+            f"VALUES (?, ?, ?, ?, {', '.join('?' * len(_CARD_FIELDS))}, ?, ?)",
+            (user_id, language, kind, front, *[(fields.get(f) or "").strip() or None for f in _CARD_FIELDS], _now(), _now()),
+        )
+        created = cur.rowcount == 1
+        row = c.execute("SELECT * FROM cards WHERE user_id=? AND language=? AND kind=? AND front=?",
+                        (user_id, language, kind, front)).fetchone()
+    return _card(row), created
+
+
+def list_cards(user_id: int, language=None, kind=None, due_only=False, limit: int = 500):
+    where, args = ["user_id=?"], [user_id]
+    if language:
+        where.append("language=?"); args.append(language)
+    if kind:
+        where.append("kind=?"); args.append(kind)
+    if due_only:
+        where.append("due_at <= ?"); args.append(_now())
+    order = "due_at ASC" if due_only else "created_at DESC"
+    with _conn() as c:
+        rows = c.execute(f"SELECT * FROM cards WHERE {' AND '.join(where)} ORDER BY {order} LIMIT ?", (*args, limit)).fetchall()
+    return [_card(r) for r in rows]
+
+
+def card_summary(user_id: int) -> dict:
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT language, kind, COUNT(*) AS total, SUM(due_at <= ?) AS due FROM cards WHERE user_id=? GROUP BY language, kind",
+            (_now(), user_id),
+        ).fetchall()
+    out = {}
+    for r in rows:
+        lang = out.setdefault(r["language"], {"due": 0, "total": 0, "kinds": {}})
+        lang["due"] += r["due"] or 0
+        lang["total"] += r["total"]
+        lang["kinds"][r["kind"]] = {"due": r["due"] or 0, "total": r["total"]}
+    return out
+
+
+def get_card(card_id: int):
+    with _conn() as c:
+        r = c.execute("SELECT * FROM cards WHERE id=?", (card_id,)).fetchone()
+    return ({**_card(r), "userId": r["user_id"], "ease": r["ease"]}) if r else None
+
+
+def save_review(card_id: int, interval: float, ease: float, reps: int, lapsed: bool, due: str):
+    with _conn() as c:
+        c.execute(
+            "UPDATE cards SET interval_days=?, ease=?, reps=?, lapses=lapses+?, due_at=?, last_reviewed_at=? WHERE id=?",
+            (interval, ease, reps, int(lapsed), due, _now(), card_id),
+        )
+
+
+def delete_card(card_id: int):
+    with _conn() as c:
+        c.execute("DELETE FROM cards WHERE id=?", (card_id,))
 
 
 def delete_session(sid: str):

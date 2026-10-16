@@ -18,6 +18,12 @@ export function setServerTTS(enabled) {
   serverTTS = enabled
 }
 
+// Listening accent chosen by the learner (applies to every play() call)
+let voiceOpts = { accent: 'default', locale: null }
+export function setVoiceOptions({ accent = 'default', locale = null } = {}) {
+  voiceOpts = { accent, locale }
+}
+
 export function stop() {
   current.token++
   if (current.audio) {
@@ -29,31 +35,35 @@ export function stop() {
   emit()
 }
 
-function speakBrowser(text, language, rate, token) {
+function speakBrowser(text, language, rate, token, locale, onStart) {
   return new Promise((resolve, reject) => {
     if (!window.speechSynthesis) return reject(new Error('当前浏览器不支持朗读'))
     const u = new SpeechSynthesisUtterance(text)
-    u.lang = LOCALES[language] || language
+    u.lang = locale || LOCALES[language] || language
     u.rate = rate
-    const voice = window.speechSynthesis.getVoices().find((v) => v.lang.startsWith(u.lang.slice(0, 2)))
+    const voices = window.speechSynthesis.getVoices()
+    const voice = voices.find((v) => v.lang.replace('_', '-') === u.lang) || voices.find((v) => v.lang.startsWith(u.lang.slice(0, 2)))
     if (voice) u.voice = voice
+    u.onstart = () => onStart?.()
     u.onend = () => resolve()
     u.onerror = (e) => (e.error === 'interrupted' || e.error === 'canceled' || token !== current.token ? resolve() : reject(new Error('朗读失败')))
     window.speechSynthesis.speak(u)
   })
 }
 
-async function fetchAudio(text, language, voiceIndex, rate) {
-  const key = `${language}|${voiceIndex}|${rate}|${text}`
+async function fetchAudio(text, language, voiceIndex, rate, accent) {
+  const key = `${language}|${accent}|${voiceIndex}|${rate}|${text}`
   if (!cache.has(key)) {
-    const blob = await api.tts({ text, language, voiceIndex, rate })
+    const blob = await api.tts({ text, language, voiceIndex, rate, accent })
     cache.set(key, URL.createObjectURL(blob))
   }
   return cache.get(key)
 }
 
 /** Play text; resolves when playback ends or is stopped. */
-export async function play(id, text, { language = 'en', voiceIndex = 0, rate = 1 } = {}) {
+export async function play(id, text, { language = 'en', voiceIndex = 0, rate = 1, accent, locale, onStart } = {}) {
+  // accent defaults to the learner's current choice (setVoiceOptions)
+  if (accent === undefined) ({ accent, locale } = voiceOpts)
   stop()
   const token = current.token
   current.id = id
@@ -62,7 +72,7 @@ export async function play(id, text, { language = 'en', voiceIndex = 0, rate = 1
     let url = null
     if (serverTTS) {
       try {
-        url = await fetchAudio(text, language, voiceIndex, rate)
+        url = await fetchAudio(text, language, voiceIndex, rate, accent || 'default')
       } catch (e) {
         console.warn('server TTS failed, falling back to browser voice', e)
       }
@@ -72,13 +82,14 @@ export async function play(id, text, { language = 'en', voiceIndex = 0, rate = 1
       await new Promise((resolve, reject) => {
         const audio = new Audio(url)
         current.audio = audio
+        audio.onplaying = () => onStart?.()
         audio.onended = resolve
         audio.onpause = resolve
         audio.onerror = () => reject(new Error('音频播放失败'))
         audio.play().catch(reject)
       })
     } else {
-      await speakBrowser(text, language, rate, token)
+      await speakBrowser(text, language, rate, token, locale, onStart)
     }
   } finally {
     if (token === current.token) {

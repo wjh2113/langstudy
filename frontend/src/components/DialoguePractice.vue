@@ -48,7 +48,8 @@
     </div>
 
     <div v-if="current && current.role === myRole" class="chat__input">
-      <AnswerBox :key="current.id" :env="env" submit-label="说完了，继续" @submit="save" />
+      <AnswerBox :key="current.id" :env="env" submit-label="说完了，继续" :hands-free="env.handsFree" :listen-signal="listen"
+        @submit="save" />
       <button class="link link--muted" @click="idx++">跳过这句</button>
     </div>
     <p v-if="current && current.role !== myRole" class="hint">
@@ -85,6 +86,7 @@ export default {
     const idx = ref(0)
     const free = ref(false)
     const bottom = ref(null)
+    const listen = ref(0) // bumped when it's the learner's line (hands-free)
     const lines = computed(() => props.content.lines.map((l, i) => ({ ...l, id: `l${i}` })))
     const shown = computed(() => lines.value.slice(0, Math.min(idx.value + 1, lines.value.length)))
     const current = computed(() => lines.value[idx.value])
@@ -97,7 +99,11 @@ export default {
     watch([idx, myRole], () => {
       clearTimeout(timer)
       const line = current.value
-      if (!myRole.value || !line || line.role === myRole.value) return
+      if (myRole.value && line && line.role === myRole.value) {
+        nextTick(() => listen.value++) // the learner's line: start listening once the box is shown
+        return
+      }
+      if (!myRole.value || !line) return
       const at = idx.value
       timer = setTimeout(() => {
         props.tracker.count(line.id)
@@ -135,7 +141,7 @@ export default {
       idx.value++
     }
 
-    return { revealed, myRole, idx, free, bottom, shown, current, roleName, voiceOf, turnOf, skipAi, save }
+    return { listen, revealed, myRole, idx, free, bottom, shown, current, roleName, voiceOf, turnOf, skipAi, save }
   },
 }
 </script>

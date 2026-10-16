@@ -29,7 +29,10 @@ export default {
     function toggle() {
       if (active.value) return stop()
       emit('play')
-      play(props.id, props.text, { language: props.env.language, rate: props.env.rate, voiceIndex: props.voiceIndex }).catch(() => {})
+      play(props.id, props.text, {
+        language: props.env.language, rate: props.env.rate, voiceIndex: props.voiceIndex,
+        accent: props.env.accent || 'default', locale: props.env.accentLocale || null,
+      }).catch(() => {})
     }
     return { active, toggle }
   },

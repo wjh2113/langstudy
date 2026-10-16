@@ -68,4 +68,17 @@ export const api = {
   session: (id) => request(`/sessions/${id}`),
   deleteSession: (id) => request(`/sessions/${id}`, { method: 'DELETE' }),
   progress: (language) => request(`/progress/${language}`),
+  notesList: () => request('/notes'),
+  chatReply: (body) => request('/chat/reply', json(body)),
+  coach: (language) => request(`/coach/${language}`),
+  uploadAudio: (sid, key, blob) => request(`/sessions/${sid}/audio`, { method: 'POST', body: audioForm(blob, { key }) }),
+  cards: ({ language, kind, due } = {}) => request('/cards?' + new URLSearchParams(
+    Object.entries({ language, kind, due: due ? 'true' : undefined }).filter(([, v]) => v),
+  )),
+  cardsSummary: () => request('/cards/summary'),
+  addCard: (body) => request('/cards', json(body)),
+  reviewCard: (id, grade) => request(`/cards/${id}/review`, json({ grade })),
+  deleteCard: (id) => request(`/cards/${id}`, { method: 'DELETE' }),
+  notes: (id) => request(`/sessions/${id}/notes`),
+  generateNotes: (id) => request(`/sessions/${id}/notes`, json({})),
 }

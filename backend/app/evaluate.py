@@ -65,6 +65,12 @@ def _count_ja_fillers(t: str, fillers: list) -> int:
     return n
 
 
+def dictation_correct(answer: str, reference: str, language: str) -> bool:
+    """A filled blank counts as right if it matches ignoring case, width, punctuation and kana type."""
+    a, r = tokens(answer, language), tokens(reference, language)
+    return bool(r) and a == r
+
+
 def reference_diff(reference: str, spoken: str, language: str) -> dict:
     """Which parts of the reference were (not) heard in the learner's speech."""
     if language == "ja":
@@ -190,6 +196,8 @@ def build_eval_prompt(content: dict, turns: list, metrics: list, language: str, 
             info.append(f"与原文吻合度：{round(m['similarity'] * 100)}%")
         if "rate" in m:
             info.append(f"语速：{m['rate']} {'词' if lang['unit'] == 'word' else '字'}/分钟")
+        if t.get("shadowSync") and t.get("lagSec") is not None:
+            info.append(f"影子跟读：比原音晚 {t['lagSec']} 秒开口，用时为原音的 {t.get('durationRatio', '?')} 倍")
         if m.get("fillers"):
             info.append(f"口头禅：{m['fillers']} 次")
         if t.get("kind") != "shadow":
@@ -247,10 +255,52 @@ def overall(final: dict):
     return round(sum(v * w for v, w in pairs) / sum(w for _, w in pairs))
 
 
+def _dictation_items(turns: list, language: str):
+    items = []
+    for t in turns:
+        ok = dictation_correct(t.get("answer") or "", t.get("reference") or "", language)
+        items.append({
+            "kind": "dictation", "prompt": t.get("prompt") or "", "reference": t.get("reference") or "",
+            "answer": t.get("answer") or "", "input": "text", "correct": ok,
+            "corrected": "", "better": "", "notes": "", "metrics": {},
+        })
+    acc = sum(i["correct"] for i in items) / len(items) if items else None
+    return items, acc
+
+
+def _dictation_only_report(items: list, acc: float, language: str) -> dict:
+    score = round(acc * 100)
+    dims = []
+    for key, name, _, desc in DIMENSIONS:
+        if key == "listening":
+            dims.append({"key": key, "name": name, "desc": desc, "score": score,
+                         "comment": f"填对 {sum(i['correct'] for i in items)} / {len(items)} 个空"})
+        else:
+            dims.append({"key": key, "name": name, "desc": desc, "score": None, "comment": "本次为精听填空，未评估"})
+    wrong = [i for i in items if not i["correct"]]
+    lang = get_language(language)
+    return {
+        "overall": score,
+        "dimensions": dims,
+        "summary": "全部填对了，听力细节抓得很准！" if not wrong else
+                   f"填错了 {len(wrong)} 处。把错的句子多听几遍，注意连读和弱读的地方。",
+        "strengths": [], "improvements": [], "items": items, "vocabulary": [],
+        "stats": {"turns": len(items), "voiceTurns": 0, "avgRate": None,
+                  "rateUnit": "词/分钟" if lang["unit"] == "word" else "字/分钟",
+                  "rateRange": list(lang["rate_range"]), "fillers": 0, "pronSource": None,
+                  "dictationAccuracy": score},
+        "demo": config.demo_mode(),
+    }
+
+
 def evaluate(content: dict, turns: list) -> dict:
     language = content.get("language", "en")
     level = content.get("level", "intermediate")
-    turns = [t for t in turns if (t.get("answer") or "").strip()]
+    dictation = [t for t in turns if t.get("kind") == "dictation"]  # empty blanks count as wrong
+    turns = [t for t in turns if t.get("kind") != "dictation" and (t.get("answer") or "").strip()]
+    dict_items, dict_acc = _dictation_items(dictation, language)
+    if not turns and dict_items:
+        return _dictation_only_report(dict_items, dict_acc, language)
     if not turns:
         raise ValueError("还没有任何作答，先说几句再结束吧")
     metrics = [turn_metrics(t, language) for t in turns]
@@ -262,9 +312,15 @@ def evaluate(content: dict, turns: list) -> dict:
 
         judged = sample_judgement(turns, metrics, obj, has_voice)
     else:
-        judged = chat_json(SYSTEM, build_eval_prompt(content, turns, metrics, language, level), temperature=0.3)
+        prompt = build_eval_prompt(content, turns, metrics, language, level)
+        if dict_acc is not None:
+            prompt += f"\n另外，学习者做了精听填空，正确率 {round(dict_acc * 100)}%。"
+        judged = chat_json(SYSTEM, prompt, temperature=0.3)
 
     final = combine(judged.get("scores") or {}, obj, has_voice)
+    if dict_acc is not None:  # blend the dictation result into listening
+        base = final.get("listening")
+        final["listening"] = round(dict_acc * 100 if base is None else (base + dict_acc * 100) / 2)
     comments = judged.get("comments") or {}
     dims = [
         {
@@ -296,13 +352,17 @@ def evaluate(content: dict, turns: list) -> dict:
             "better": str(j.get("better") or ""),
             "notes": str(j.get("notes") or ""),
             "metrics": {k: m[k] for k in ("rate", "fillers", "similarity", "pron") if k in m},
+            "audioUrl": str(t.get("audioUrl") or ""),
         }
+        if t.get("shadowSync"):
+            item["metrics"].update({k: t.get(k) for k in ("lagSec", "durationRatio") if t.get(k) is not None})
         if t.get("pronNote") or t.get("pronIssues"):
             item["pronNote"] = str(t.get("pronNote") or "")
             item["pronIssues"] = [i for i in t.get("pronIssues") or [] if isinstance(i, dict)][:6]
         if "diff" in m:
             item["diff"] = m["diff"]
         items.append(item)
+    items.extend(dict_items)
 
     rates = [m["rate"] for m in metrics if "rate" in m]
     stats = {
@@ -313,6 +373,7 @@ def evaluate(content: dict, turns: list) -> dict:
         "rateRange": list(get_language(language)["rate_range"]),
         "fillers": sum(m.get("fillers", 0) for m in metrics),
         "pronSource": obj.get("pronSource"),
+        "dictationAccuracy": round(dict_acc * 100) if dict_acc is not None else None,
     }
     return {
         "overall": overall(final),
