@@ -32,6 +32,13 @@ export const api = {
   resetPassword: (id: number) => request<{ password: string }>(`/admin/users/${id}/reset-password`, post()),
   usage: (days = 30) => request<any>(`/admin/usage?days=${days}`),
   mistakeStats: () => request<any>('/admin/stats/mistakes'),
+  importPrompt: () => request<{ prompt: string }>('/admin/import-prompt'),
+  importTopics: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<{ imported: { id: string; topic: string; mode: string; title: string; hasNotes: boolean }[]; errors: string[] }>(
+      '/admin/import', { method: 'POST', body: form })
+  },
 
   // practice
   config: () => request<AppConfig>('/config'),

@@ -1,10 +1,12 @@
 """/api/admin: invites, users, AI usage and answer statistics (administrator only)."""
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 
 from .. import ai, auth, db
 from ..deps import admin_user, bad
+from ..import_pack import PROMPT, parse_documents, read_upload
+from ..llm import LLMError
 from ..schemas import InviteReq, UserPatch
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -51,6 +53,36 @@ def api_reset_password(user_id: int, admin: dict = Depends(admin_user)):
     password = auth.temp_password()
     db.set_password(user_id, auth.hash_password(password))
     return {"password": password}
+
+
+@router.get("/import-prompt")
+def api_import_prompt(_: dict = Depends(admin_user)):
+    """The instructions an administrator pastes into another model."""
+    return {"prompt": PROMPT}
+
+
+@router.post("/import")
+async def api_import(file: UploadFile = File(...), admin: dict = Depends(admin_user)):
+    """Turn a Markdown file or a zip of them into practice sessions on this admin account."""
+    data = await file.read()
+    try:
+        texts = read_upload(file.filename or "", data)
+        ready, errors = parse_documents(texts)
+    except (LLMError, UnicodeError) as e:
+        bad(str(e) if str(e) else "文件不是 UTF-8 文本")
+    if not ready:
+        bad("；".join(errors) or "没有可以导入的话题")
+    imported = []
+    for item in ready:
+        sid = db.create_session(item["content"], admin["id"])
+        if item["notes"]:
+            db.save_notes(sid, item["notes"])
+        content = item["content"]
+        imported.append({
+            "id": sid, "topic": content["topic"], "mode": content["mode"],
+            "title": content["title"], "hasNotes": bool(item["notes"]),
+        })
+    return {"imported": imported, "errors": errors}
 
 
 @router.get("/usage")
