@@ -11,6 +11,7 @@ import threading
 
 from . import config
 from .languages import get_accent, get_language
+from .tts_silence import tighten_mp3
 
 
 class TTSError(RuntimeError):
@@ -108,7 +109,9 @@ async def synthesize(text: str, language: str, voice_index: int = 0, rate: float
         voices, provider = get_language(language)["voices"], "edge"
     voice = voices[voice_index % len(voices)]
 
-    key = hashlib.sha1(f"{provider}|{voice}|{rate:.2f}|{text}".encode()).hexdigest()
+    # gap120: gateway files are stored after long silences are shortened, so old clips are not reused.
+    gap = "|gap120" if provider == "gateway" else ""
+    key = hashlib.sha1(f"{provider}|{voice}|{rate:.2f}|{text}{gap}".encode()).hexdigest()
     path = config.TTS_CACHE_DIR / f"{key}.mp3"
     hit = _read_cached(path)
     if hit is not None:
@@ -123,6 +126,8 @@ async def synthesize(text: str, language: str, voice_index: int = 0, rate: float
             audio = await (_gateway(text, voice, rate) if provider == "gateway" else _edge(text, voice, rate))
             if not audio:
                 raise TTSError("语音合成没有返回音频")
+            if provider == "gateway":
+                audio = await asyncio.to_thread(tighten_mp3, audio)
             tmp = path.with_suffix(".part")
             tmp.write_bytes(audio)
             os.replace(tmp, path)
