@@ -109,8 +109,8 @@ async def synthesize(text: str, language: str, voice_index: int = 0, rate: float
         voices, provider = get_language(language)["voices"], "edge"
     voice = voices[voice_index % len(voices)]
 
-    # gap120: gateway files are stored after long silences are shortened, so old clips are not reused.
-    gap = "|gap120" if provider == "gateway" else ""
+    # gap360: mid-word gaps are shortened, but a pause after ? . ! is kept, so older clips are not reused.
+    gap = "|gap360" if provider == "gateway" else ""
     key = hashlib.sha1(f"{provider}|{voice}|{rate:.2f}|{text}{gap}".encode()).hexdigest()
     path = config.TTS_CACHE_DIR / f"{key}.mp3"
     hit = _read_cached(path)
@@ -127,7 +127,7 @@ async def synthesize(text: str, language: str, voice_index: int = 0, rate: float
             if not audio:
                 raise TTSError("语音合成没有返回音频")
             if provider == "gateway":
-                audio = await asyncio.to_thread(tighten_mp3, audio)
+                audio = await asyncio.to_thread(tighten_mp3, audio, text)
             tmp = path.with_suffix(".part")
             tmp.write_bytes(audio)
             os.replace(tmp, path)

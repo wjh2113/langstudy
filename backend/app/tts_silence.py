@@ -1,8 +1,9 @@
 """Shorten unnatural pauses inside a CosyVoice MP3.
 
 The gateway voice leaves several tenths of a second of silence in the middle of
-one sentence. Playback then sounds like it stalls. Collapse only those long
-gaps down to a short breath, and leave the voice itself alone.
+one sentence. Playback then sounds like it stalls. Collapse only those gaps.
+A stop after ? or . is the sentence itself breathing, same as 小树学堂, so that
+one stays.
 """
 import array
 import logging
@@ -12,19 +13,39 @@ log = logging.getLogger(__name__)
 
 MAX_GAP_MS = 180
 KEEP_MS = 120
+# A hole this long, in a line that actually has a sentence break, is the pause
+# after that break — not the mid-word stall.
+STOP_MS = 360
+STOP_CAP_MS = 700
 SAMPLE_RATE = 16000
 
 
-def tighten_mp3(data: bytes, *, max_gap_ms: int = MAX_GAP_MS, keep_ms: int = KEEP_MS) -> bytes:
-    """Return MP3 bytes with internal silences longer than max_gap_ms cut down to keep_ms.
+def has_internal_stop(text: str) -> bool:
+    """True when a sentence ending sits in the middle, so the voice should pause there."""
+    t = " ".join((text or "").split())
+    if not t:
+        return False
+    t = t.rstrip('”"\'』」）)]')
+    if t.endswith(("...", "…")):
+        t = t.rstrip(".…")
+    elif t and t[-1] in "。！？!?；;":
+        t = t[:-1]
+    elif t.endswith(".") and not t.endswith(".."):
+        t = t[:-1]
+    return any(ch in t for ch in "。！？!?；") or ". " in t or t.endswith(".")
 
-    Invalid audio, or audio that has no long gap, is returned unchanged.
+
+def tighten_mp3(data: bytes, text: str = "", *, max_gap_ms: int = MAX_GAP_MS, keep_ms: int = KEEP_MS) -> bytes:
+    """Return MP3 bytes with mid-sentence silences longer than max_gap_ms cut down to keep_ms.
+
+    A pause at an internal ? . or ! is left in place. Invalid audio, or audio
+    that has no long gap, is returned unchanged.
     """
     if not data:
         return data
     try:
         samples, rate = _decode_mp3(data)
-        tightened = shorten_silence(samples, rate, max_gap_ms, keep_ms)
+        tightened = shorten_silence(samples, rate, max_gap_ms, keep_ms, preserve_stops=has_internal_stop(text))
         if tightened is samples:
             return data
         encoded = _encode_mp3(tightened, rate)
@@ -36,8 +57,14 @@ def tighten_mp3(data: bytes, *, max_gap_ms: int = MAX_GAP_MS, keep_ms: int = KEE
         return data
 
 
-def shorten_silence(samples: array.array, sample_rate: int, max_gap_ms: int = MAX_GAP_MS, keep_ms: int = KEEP_MS) -> array.array:
-    """Drop the middle of any near-silent run longer than max_gap_ms. Same object if nothing changed."""
+def shorten_silence(
+    samples: array.array,
+    sample_rate: int,
+    max_gap_ms: int = MAX_GAP_MS,
+    keep_ms: int = KEEP_MS,
+    preserve_stops: bool = False,
+) -> array.array:
+    """Drop the middle of a mid-word silence. Same object if nothing changed."""
     if sample_rate <= 0 or len(samples) < sample_rate // 10:
         return samples
     frame = max(1, sample_rate // 100)  # 10 ms
@@ -57,6 +84,8 @@ def shorten_silence(samples: array.array, sample_rate: int, max_gap_ms: int = MA
     silent = [v < thresh for v in rms]
     keep_frames = max(1, round(keep_ms / 10))
     max_frames = max(keep_frames, round(max_gap_ms / 10))
+    stop_frames = max(max_frames, round(STOP_MS / 10))
+    cap_frames = max(stop_frames, round(STOP_CAP_MS / 10))
     out = array.array("h")
     i = 0
     changed = False
@@ -69,7 +98,11 @@ def shorten_silence(samples: array.array, sample_rate: int, max_gap_ms: int = MA
         while j < len(silent) and silent[j]:
             j += 1
         run = j - i
-        take = run if run <= max_frames else keep_frames
+        internal = i > 0 and j < len(silent)
+        if preserve_stops and internal and run >= stop_frames:
+            take = min(run, cap_frames)
+        else:
+            take = run if run <= max_frames else keep_frames
         if take < run:
             changed = True
         start = i + (run - take) // 2
