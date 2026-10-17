@@ -119,7 +119,9 @@ def test_dialogue_aliases_and_zip():
 
 
 def test_prompt_follows_the_courseware():
-    assert "一份对应话题的课件" in PROMPT
+    assert "有课件时，以课件为主" in PROMPT
+    assert "没有课件时" in PROMPT
+    assert "两种都要" in PROMPT
     assert "不要为了凑数去编" in PROMPT
     assert "不要用代码块把全文包起来" in PROMPT
 

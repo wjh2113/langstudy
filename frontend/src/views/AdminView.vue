@@ -143,7 +143,7 @@
     <template v-else-if="tab === 'import'">
       <section class="card">
         <h2 class="card__title">发给其他模型的说明</h2>
-        <p class="muted">把下面整段复制给别的大模型，并附上这个话题的课件（PPT、PDF、Word，或把讲义文字粘贴在同一条消息里）。让它按课件写成可导入的话题、单词、句型和语法。交回来的可以是一个 Markdown，也可以是装着多个 Markdown 的压缩包。</p>
+        <p class="muted">把下面整段复制给别的大模型。有课件时，在同一条消息里附上 PPT、PDF、Word，或把讲义文字贴在后面，它会以课件为准。没有课件时，在后面写上话题和目标语言（英语、日语，或两种都要）。交回来的可以是一个 Markdown，也可以是装着多个 Markdown 的压缩包。</p>
         <textarea class="import-prompt" readonly :value="prompt" rows="14" />
         <button type="button" class="btn btn--outline" :disabled="!prompt" @click="copy(prompt, 'prompt')">
           <AppIcon name="copy" :size="16" /> {{ copied === 'prompt' ? '已复制' : '复制说明' }}
