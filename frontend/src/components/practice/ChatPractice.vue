@@ -16,7 +16,7 @@
           <div class="msg__col">
             <div class="msg__bubble">
               <template v-if="m.role === 'ai'">
-                <PlayButton :id="m.id" :text="m.text" :env="env" size="sm" @play="tracker.count(m.id)" />
+                <PlayButton :id="m.id" :text="m.text" :env="env" :voice-index="1" size="sm" @play="tracker.count(m.id)" />
                 <TargetText :text="m.text" :env="env" :revealed="!!revealed[m.id] || i < st.messages.length - 1" @reveal="revealed[m.id] = true" />
               </template>
               <p v-else :class="env.textClass">{{ m.text }}</p>
@@ -84,7 +84,7 @@ export default defineComponent({
 
     function speak(m: Msg) {
       props.tracker.count(m.id)
-      play(m.id, m.text, { language: props.env.language, rate: props.env.rate })
+      play(m.id, m.text, { language: props.env.language, rate: props.env.rate, voiceIndex: 1 })
         .catch(() => {})
         .finally(() => { if (st.messages[st.messages.length - 1]?.id === m.id && !st.ended) listen.value++ })
     }
