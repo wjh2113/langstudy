@@ -185,7 +185,14 @@ def install_fake_httpx(responder):
         calls.append({"url": url, **kw})
         return responder(url, kw)
 
+    class TimeoutException(HTTPError):
+        pass
+
+    class NetworkError(HTTPError):
+        pass
+
     fake.post, fake.HTTPError, fake.Response = post, HTTPError, FakeResp
+    fake.TimeoutException, fake.NetworkError = TimeoutException, NetworkError
     sys.modules["httpx"] = fake
     import importlib
 
@@ -211,9 +218,9 @@ def test_gateway_requests():
             return FakeResp(json_body={"score": 82, "transcript": "hi", "issues": [{"quote": "a", "note": "b"}], "note": "ok"})
 
     gw, calls = install_fake_httpx(responder)
-    from app import llm
+    from app import ai
 
-    assert llm.chat_json("sys", "user", fast=True) == {"ok": 1}
+    assert ai.chat_json("sys", "user", fast=True) == {"ok": 1}
     chat = calls[-1]
     assert chat["url"] == "https://gw.example/api/ai/chat"
     assert chat["headers"]["Authorization"] == "Bearer aam_test"

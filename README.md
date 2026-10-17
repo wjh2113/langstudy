@@ -31,13 +31,26 @@ chmod +x start.sh
 
 | 功能 | 网关能力 |
 |---|---|
-| 生成材料、评分 | `quality-chat` |
-| AI 追问 | `fast-chat`（要快） |
+| 生成材料、较长练习的评分 | `quality-chat` |
+| AI 追问、自由对话、学习笔记、翻译、短练习的评分 | `fast-chat` |
 | 语音识别 | `speech`（任何浏览器都能用，不再依赖 Edge） |
-| 朗读 | `tts`（CosyVoice2，A/B 角色默认 anna / alex 两个音色） |
-| 发音评测 | `pronunciation`（跟读、对话“照着说”时，对照原文打分） |
+| 发音评测 | `pronunciation`（只在点“评测发音”时调用） |
+| 朗读 | 默认用微软 Edge 免费语音，不耗积分；`TTS_PROVIDER=gateway` 可改回网关 `tts`（CosyVoice2） |
 
-能力名和音色都能在 `.env` 里改。如果觉得 CosyVoice 读英语/日语不够地道，把 `TTS_PROVIDER` 改成 `edge`，朗读就换回微软 Edge 免费语音，其余照旧走网关。
+能力名和音色都能在 `.env` 里改。
+
+### 省积分的做法
+
+- **朗读**默认走微软 Edge 免费语音，并缓存在磁盘上（同一句只合成一次）
+- **评分精简**：不再发整篇原文；只让模型批改有问题的句子；“值得记下的表达”从 4–6 个减到 3 个；作答不超过 3 条或总字数较少的练习用 `fast-chat` 评分
+- **自由对话**只把最近 6 轮原文发给模型，更早的内容由模型顺手压缩成一句摘要随下一轮带上
+- **翻译按需生成**：出题时不带中文翻译；打开“显示中文翻译”、盲听时点开原文，或点句子旁的“译”时才翻译那一句。同一时间要翻的句子合并成一次请求，结果存在数据库里，谁再看都不用重新翻
+- **材料复用**：同一话题、难度、形式再练时，会问你“用上次的题”还是“换一套”。用上次的题不调用模型，学习笔记也一起带过来；报告页的“同话题再练一次”同样可选
+- **学习笔记**用 `fast-chat`
+- **发音评测改为手动**：跟读、照着说之后出现“评测发音”按钮，点了才评；复习错句时也一样
+- **防重复扣费**：每次请求带一个幂等键（请求头 `Idempotency-Key`，可在 `.env` 改名），网络超时或网关 502/503/504 时用同一个键自动重试 2 次；模型返回的 JSON 坏了先在本地修复（去掉代码块、补全被截断的括号、去掉多余逗号等），修不好才重新问一次
+
+> 幂等键要网关支持才会生效。如果你的网关用别的请求头名，改 `GATEWAY_IDEMPOTENCY_HEADER` 即可。
 
 **不填任何 Key 也能跑**：会进入演示模式，使用内置示例内容。不用网关时，也可以按 `.env.example` 填 DeepSeek 等 OpenAI 兼容服务。
 
@@ -59,11 +72,15 @@ chmod +x start.sh
 - **听力口音**（首页或练习右侧面板选择，按语言分别记住）：
   - 英语：美洲（美国、加拿大、拉美口音）、欧洲（英国、爱尔兰、德国口音、法国口音）、亚洲（印度、新加坡、日本口音）、大洋洲（澳大利亚）
   - 日语：默认音色、东京标准音（微软）
-  - 选了具体口音后，朗读改用微软 Edge 的地区音色（对话里 A/B 是该口音的一女一男）；“默认音色”仍走网关。标“模拟”的几种（日本、德国、法国、拉美口音）是让该国母语音色来读英文，听起来是真实的外国口音，但不是真人录音
+  - 选了具体口音后，朗读改用微软 Edge 的地区音色（对话里 A/B 是该口音的一女一男）。标“模拟”的几种（日本、德国、法国、拉美口音）是让该国母语音色来读英文，听起来是真实的外国口音，但不是真人录音
 - **学习笔记**：每个话题可以一键生成单词（音标/假名、词性、释义、例句）、语法点（讲解、例句、常见错误）、句型（用法、例句）总结，例句都能按所选口音播放。生成后自动保存，可以随时“重新生成”替换。练习页上方切到“学习笔记”、报告页底部、左侧“学习笔记”页面都能看到
 - **作答**：点麦克风说，实时显示识别文字，可回放自己的录音、重录；也可以切换成文字输入
 - **六维评分**：听力理解、发音清晰度、口语流利度、语法准确性、词汇运用、内容与表达，雷达图 + 逐条点评 + 修改后句子 + 更地道的说法（可播放）+ 值得记下的表达
-- **历史记录**：所有练习存在本地 SQLite（`backend/data/langstudy.db`），可回看报告，显示得分变化
+- **历史记录**：所有练习存在本地 SQLite（`backend/data/langstudy.db`），可回看报告，显示近 30 天英语、日语的得分趋势
+- **自动保存、接着做**：每答一题都会自动保存（作答、自由对话记录、做到第几题、重听次数、录音）。刷新、误关标签页，重新打开就接着做；首页会列出最近没做完的练习
+- **每个页面有自己的网址**：练习 `/practice/编号`、报告 `/report/编号`、笔记 `/notes/编号`……浏览器后退键可以用，也能直接收藏
+- **分享报告**：报告页点“分享报告”生成只读链接（`/share/…`），对方不用登录就能看（含你的录音）；随时可以关闭分享，链接立即失效
+- **主题**：浅色 / 深色 / 跟随系统，右上角切换
 
 ### 评分是怎么来的
 
@@ -80,38 +97,52 @@ chmod +x start.sh
 
 **已知局限**：发音评测只在“有原文可对照”时进行（跟读、照着说）；自由回答的发音仍按识别结果估算。界面上“没读出来的词”的标注来自识别比对，日语里汉字/假名写法不同（如「一人」和「ひとり」）可能被误标。
 
+## 安全与运维
+
+- **防暴力尝试**：同一账号 15 分钟内输错 5 次密码锁 5 分钟；同一 IP 15 分钟内失败 20 次锁 15 分钟；同一 IP 输错 10 次邀请码锁 15 分钟。部署在 Nginx 等反向代理后面时，把 `TRUST_PROXY=1` 打开才能识别真实 IP
+- **磁盘**：朗读缓存超过 `TTS_CACHE_MAX_MB`（默认 500MB）时自动清掉最久没播放的；练习录音保留 `AUDIO_RETENTION_DAYS`（默认 90 天），删除练习时录音一起删除。清理在启动时和之后每 6 小时进行一次
+- **慢请求不再占住后端**：出题、评分、生成笔记改成后台任务（`JOB_WORKERS` 个线程），接口立刻返回任务号，前端轮询进度；同一个练习重复点“结束并评分”只会跑一次
+- **AI 用量**：每次调用大模型、语音识别、朗读、发音评测都记在 `ai_usage` 表里（用户、用途、tokens、网关返回的积分、耗时）。管理员在“用户与邀请 → 用量与统计”查看每人今天和近 30 天的用量。`AI_DAILY_LIMIT` 可限制每个普通用户每天调用大模型的次数
+- **作答记录单独成表**（`turns`），可以做统计，例如“用量与统计”里的“大家最常犯的问题”
+- **数据库升级**：表结构变更写在 `backend/app/migrations.py`，每次改结构加一个编号步骤，启动时按顺序自动执行并记录在 `schema_version` 表里。老数据库第一次启动会自动升级（原来存成整段 JSON 的作答记录会搬进新表）
+
 ## 目录结构
 
 ```
 langstudy/
-├── start.sh                一键启动
+├── start.sh                一键启动（依赖有更新时会自动重新安装）
 ├── backend/                FastAPI
 │   ├── app/
-│   │   ├── main.py         路由（含登录、管理员接口）
-│   │   ├── auth.py         密码、登录令牌、邀请码
-│   │   ├── gateway.py      AIapiMgr 网关客户端
-│   │   ├── generate.py     生成材料（提示词 + 结果校验）
-│   │   ├── evaluate.py     评分（实测指标 + 模型判断 + 加权）
-│   │   ├── followup.py     问答模式的 AI 追问
-│   │   ├── notes.py        话题学习笔记（单词 / 语法 / 句型）
-│   │   ├── conversation.py 自由对话里 AI 的回复
-│   │   ├── coach.py        难度建议、薄弱项
-│   │   ├── srs.py          间隔复习排期（SM-2）
-│   │   ├── mistakes.py     报告里的错句自动入库
-│   │   ├── languages.py    语言与口音配置（新增语言、口音改这里）
+│   │   ├── main.py         创建应用、挂路由、托管前端
+│   │   ├── routers/        接口按模块分开：auth / admin / practice / sessions / cards / speech
+│   │   ├── schemas.py      请求和返回的数据结构（也用来生成前端的 TypeScript 类型）
+│   │   ├── deps.py         当前用户、权限、客户端 IP 等公共依赖
+│   │   ├── ai.py           统一的 AI 服务层：用量记账、每日上限、JSON 修复后重试
+│   │   ├── llm.py          底层模型调用与 JSON 解析修复
+│   │   ├── gateway.py      AIapiMgr 网关客户端（幂等键、超时、重试）
+│   │   ├── jobs.py         后台任务（出题 / 评分 / 笔记）
+│   │   ├── ratelimit.py    登录、注册、邀请码防暴力尝试
+│   │   ├── maintenance.py  定期清理：朗读缓存、过期录音、旧任务
+│   │   ├── migrations.py   数据库迁移（编号步骤）
+│   │   ├── translate.py    按需翻译（带缓存、批量）
+│   │   ├── generate.py / evaluate.py / followup.py / conversation.py / notes.py   出题、评分、追问、对话、笔记
+│   │   ├── coach.py / srs.py / mistakes.py   难度建议、间隔复习、错句入库
+│   │   ├── languages.py    语言与口音配置
 │   │   ├── tts.py / stt.py 朗读 / 语音识别
 │   │   ├── demo.py         演示模式内容
-│   │   └── db.py           SQLite（用户、邀请码、练习记录）
-│   ├── tests/              test_core / test_accounts_gateway / test_notes_accents / test_practice_extras
+│   │   └── db.py           SQLite 读写
+│   ├── scripts/gen_types.py   从接口文档生成前端类型
+│   ├── tests/              test_core / test_accounts_gateway / test_notes_accents / test_practice_extras / test_architecture
 │   └── .env.example
-└── frontend/               Vue 3 + Vite
+└── frontend/               Vue 3 + TypeScript + vue-router + Vite
     └── src/
-        ├── App.vue         页面切换与全局状态
-        ├── components/     AuthView / HomeView / PracticeView（五种模式各一个组件）/ ReportView / ReviewView（复习）/ AccentQuizView（口音听辨）/ HistoryView / NotesView / AdminView …
-        ├── cards.js        生词本收藏状态、到期数
-        ├── useRecorder.js  录音、识别、音量与有效语速（组合式函数）
-        ├── audio.js        播放（服务端语音 + 浏览器兜底）
-        └── diff.js         跟读比对
+        ├── main.ts / router.ts / store.ts   入口、路由（每页一个网址）、全局状态
+        ├── App.vue         登录守卫 + 顶栏 + 侧栏
+        ├── api/            types.gen.ts（自动生成）、models.ts、client.ts（含任务轮询）、index.ts
+        ├── lib/            audio / recorder / diff / cards / translate / practice（自动保存用的状态）
+        ├── views/          每个页面一个组件：Home / Practice / Report / Share / History / NotesList / NotesDetail / Review / AccentQuiz / Admin / Account / Auth
+        ├── components/     ui/（按钮、开关、分段控件、图表等）、practice/（五种练习形式、作答框、设置面板、学习笔记）、report/、layout/
+        └── styles.css      设计规范里的颜色、字体、组件样式（浅色 / 深色）
 ```
 
 ## 手动启动
@@ -130,9 +161,11 @@ npm install
 npm run dev
 ```
 
+改了 `backend/app/schemas.py` 之后运行 `cd frontend && npm run gen:types` 重新生成前端类型，再用 `npm run typecheck` 检查前端哪里需要跟着改。
+
 部署时可以 `cd frontend && npm run build`，后端会自动托管 `frontend/dist`，只需运行 uvicorn 一个进程。注意浏览器只在 `localhost` 或 HTTPS 下允许使用麦克风，所以给别人用要部署到 HTTPS 域名上；网关若开了租户 IP 白名单，要把服务器出口 IP 加进去。
 
 ## 后续路线
 
 - 第二阶段：手机端优化（底部固定录音按钮、PWA 安装到桌面）
-- 生词本与错题复练；更多语言（在 `languages.py` 中添加）
+- 更多语言（在 `languages.py` 中添加）

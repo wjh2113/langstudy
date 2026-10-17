@@ -60,6 +60,13 @@ if [[ ! -f "\${REMOTE_DIR}/backend/.env" ]]; then
   sudo cp "\${REMOTE_DIR}/backend/.env.example" "\${REMOTE_DIR}/backend/.env"
 fi
 sudo chown -R ubuntu:ubuntu "\${REMOTE_DIR}"
+# Nginx terminates TLS; rate limits must see the real client IP, not 127.0.0.1.
+ENV_FILE="\${REMOTE_DIR}/backend/.env"
+if grep -q '^TRUST_PROXY=' "\${ENV_FILE}"; then
+  sed -i 's/^TRUST_PROXY=.*/TRUST_PROXY=1/' "\${ENV_FILE}"
+else
+  echo 'TRUST_PROXY=1' >> "\${ENV_FILE}"
+fi
 
 if [[ ! -x "\${REMOTE_DIR}/backend/.venv/bin/python" ]]; then
   python3.12 -m venv "\${REMOTE_DIR}/backend/.venv"

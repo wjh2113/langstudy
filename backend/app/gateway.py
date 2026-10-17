@@ -3,6 +3,9 @@
 All calls authenticate with the tenant API key; models are chosen by capability
 name, never by upstream model id. See 第三方应用接入指南.md.
 """
+import time
+import uuid
+
 import httpx
 
 from . import config
@@ -29,6 +32,12 @@ def _headers(json_body: bool = True) -> dict:
     return h
 
 
+# Transient failures worth retrying. The retry reuses the same idempotency key, so a
+# request the gateway already completed (and charged) is not charged a second time.
+_RETRY_STATUS = {502, 503, 504}
+RETRIES = 2
+
+
 def _url(path: str) -> str:
     return config.GATEWAY_URL.rstrip("/") + path
 
@@ -48,16 +57,51 @@ def _raise_for(resp: httpx.Response, what: str):
     raise GatewayError(f"{what}失败（{resp.status_code}）：{hint or detail}" + (f"（{detail}）" if hint and detail else ""))
 
 
-def _post(path: str, what: str, timeout: float, **kwargs) -> httpx.Response:
-    try:
-        resp = httpx.post(_url(path), timeout=timeout, **kwargs)
-    except httpx.HTTPError as e:
-        raise GatewayError(f"{what}失败：连不上网关 {config.GATEWAY_URL}（{e}）") from e
-    _raise_for(resp, what)
-    return resp
+def _post(path: str, what: str, timeout: float, headers: dict, **kwargs) -> httpx.Response:
+    headers = {**headers, config.GATEWAY_IDEMPOTENCY_HEADER: uuid.uuid4().hex}
+    for attempt in range(RETRIES + 1):
+        last = attempt == RETRIES
+        try:
+            resp = httpx.post(_url(path), timeout=timeout, headers=headers, **kwargs)
+        except (httpx.TimeoutException, httpx.NetworkError) as e:
+            if last:
+                raise GatewayError(f"{what}失败：连不上网关 {config.GATEWAY_URL}（{e}）") from e
+        except httpx.HTTPError as e:
+            raise GatewayError(f"{what}失败：连不上网关 {config.GATEWAY_URL}（{e}）") from e
+        else:
+            if resp.status_code not in _RETRY_STATUS or last:
+                _raise_for(resp, what)
+                return resp
+        time.sleep(0.8 * (attempt + 1))
+    raise GatewayError(f"{what}失败")  # pragma: no cover
 
 
-def chat(messages: list, capability: str, temperature: float | None = None) -> str:
+def usage_of(resp: httpx.Response, data=None) -> dict:
+    """Tokens and credits charged, from the response body (`usage`) or billing headers, when present."""
+    out = {}
+    u = data.get("usage") if isinstance(data, dict) and isinstance(data.get("usage"), dict) else {}
+    for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        if isinstance(u.get(k), (int, float)):
+            out[k] = int(u[k])
+    for k in ("credits", "cost", "points"):
+        v = u.get(k, data.get(k) if isinstance(data, dict) else None)
+        if isinstance(v, (int, float)):
+            out["credits"] = float(v)
+            break
+    headers = getattr(resp, "headers", {}) or {}
+    for h in ("x-credits-charged", "x-credits-used", "x-points-charged", "x-billing-credits"):
+        try:
+            if h in headers:
+                out["credits"] = float(headers[h])
+                break
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def chat_full(messages: list, capability: str, temperature: float | None = None,
+              timeout: float | None = None) -> tuple:
+    """(reply text, usage) for a chat completion."""
     body = {
         "tenantId": config.GATEWAY_TENANT,
         "capability": capability,
@@ -68,11 +112,16 @@ def chat(messages: list, capability: str, temperature: float | None = None) -> s
     }
     if temperature is not None:
         body["temperature"] = temperature
-    data = _post("/api/ai/chat", "调用大模型", 120, headers=_headers(), json=body).json()
+    resp = _post("/api/ai/chat", "调用大模型", timeout or config.AI_TIMEOUT_SEC, headers=_headers(), json=body)
+    data = resp.json()
     try:
-        return data["choices"][0]["message"]["content"] or ""
+        return data["choices"][0]["message"]["content"] or "", usage_of(resp, data)
     except (KeyError, IndexError, TypeError) as e:
         raise GatewayError("网关返回的对话结果格式不对") from e
+
+
+def chat(messages: list, capability: str, temperature: float | None = None) -> str:
+    return chat_full(messages, capability, temperature)[0]
 
 
 def transcribe(audio: bytes, filename: str, mime: str, language: str) -> str:

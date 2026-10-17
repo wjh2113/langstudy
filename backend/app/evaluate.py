@@ -11,7 +11,7 @@ from difflib import SequenceMatcher
 
 from . import config
 from .languages import get_language, MODES
-from .llm import chat_json
+from .ai import chat_json
 
 DIMENSIONS = [
     # key, 中文名, 权重, 说明
@@ -179,8 +179,6 @@ def build_eval_prompt(content: dict, turns: list, metrics: list, language: str, 
         f"目标语言：{lang['english_name']}，学习者级别：{lang['levels'].get(level, level)}",
         f"练习形式：{MODES.get(content.get('mode'), '')}，话题：{content.get('topic', '')}，标题：{content.get('title', '')}",
     ]
-    if content.get("mode") == "article":
-        lines.append("短文原文：" + " ".join(s["text"] for s in content.get("sentences", [])))
     lines.append("\n学习者作答记录（index 从 0 开始）：")
     for i, (t, m) in enumerate(zip(turns, metrics)):
         kind = "回答追问" if t.get("followUp") else {"shadow": "跟读", "answer": "回答问题", "line": "角色台词"}.get(t.get("kind"), "作答")
@@ -213,10 +211,10 @@ def build_eval_prompt(content: dict, turns: list, metrics: list, language: str, 
   "summary": "2-3 句中文总评",
   "strengths": ["做得好的地方，2-3 条"],
   "improvements": ["最该改进的地方，2-3 条，具体可操作"],
-  "items": [{"index": 0, "corrected": "只修正错误后的句子（无错误则原样）", "better": "更自然地道的说法", "notes": "中文说明主要问题，无问题可写“很好”"}],
+  "items": [{"index": 0, "corrected": "修正错误后的句子", "better": "更自然地道的说法", "notes": "一句中文说明主要问题"}],
   "vocabulary": [{"word": "值得学习的词或短语", "reading": "日语写假名读音，英语留空", "meaning": "中文释义", "example": "例句"}]
 }
-items 覆盖除“跟读”以外的每一条作答；vocabulary 给 4-6 个。"""
+items 只列出有语法、用词或表达问题的作答（跟读不用列），没问题的不要列；vocabulary 只给 3 个；点评都尽量简短。"""
         + ("" if has_voice else "\n注意：本次全部是文字输入，pronunciation 和 fluency 填 null。")
     )
     return "\n".join(lines)
@@ -260,6 +258,7 @@ def _dictation_items(turns: list, language: str):
     for t in turns:
         ok = dictation_correct(t.get("answer") or "", t.get("reference") or "", language)
         items.append({
+            "key": str(t.get("id") or ""),
             "kind": "dictation", "prompt": t.get("prompt") or "", "reference": t.get("reference") or "",
             "answer": t.get("answer") or "", "input": "text", "correct": ok,
             "corrected": "", "better": "", "notes": "", "metrics": {},
@@ -293,6 +292,15 @@ def _dictation_only_report(items: list, acc: float, language: str) -> dict:
     }
 
 
+SHORT_TURNS, SHORT_UNITS = 3, {"en": 120, "ja": 240}
+
+
+def is_short(turns: list, language: str) -> bool:
+    """A small practice (few, short answers) is graded by the fast model."""
+    units = sum(count_units(t.get("answer") or "", language) for t in turns)
+    return len(turns) <= SHORT_TURNS or units <= SHORT_UNITS.get(language, 120)
+
+
 def evaluate(content: dict, turns: list) -> dict:
     language = content.get("language", "en")
     level = content.get("level", "intermediate")
@@ -315,7 +323,7 @@ def evaluate(content: dict, turns: list) -> dict:
         prompt = build_eval_prompt(content, turns, metrics, language, level)
         if dict_acc is not None:
             prompt += f"\n另外，学习者做了精听填空，正确率 {round(dict_acc * 100)}%。"
-        judged = chat_json(SYSTEM, prompt, temperature=0.3)
+        judged = chat_json(SYSTEM, prompt, temperature=0.3, fast=is_short(turns, language), task="evaluate")
 
     final = combine(judged.get("scores") or {}, obj, has_voice)
     if dict_acc is not None:  # blend the dictation result into listening
@@ -342,6 +350,7 @@ def evaluate(content: dict, turns: list) -> dict:
     for i, (t, m) in enumerate(zip(turns, metrics)):
         j = by_index.get(i, {})
         item = {
+            "key": str(t.get("id") or ""),
             "kind": t.get("kind"),
             "followUp": bool(t.get("followUp")),
             "prompt": t.get("prompt") or "",
@@ -351,6 +360,8 @@ def evaluate(content: dict, turns: list) -> dict:
             "corrected": str(j.get("corrected") or ""),
             "better": str(j.get("better") or ""),
             "notes": str(j.get("notes") or ""),
+            # graders only list answers with problems; the rest are fine as they are
+            "ok": t.get("kind") != "shadow" and i not in by_index,
             "metrics": {k: m[k] for k in ("rate", "fillers", "similarity", "pron") if k in m},
             "audioUrl": str(t.get("audioUrl") or ""),
         }

@@ -31,8 +31,22 @@ GATEWAY_CAP_PRONOUNCE = _env("GATEWAY_CAP_PRONOUNCE", "pronunciation")
 GATEWAY_TTS_VOICES = [v.strip() for v in _env(
     "GATEWAY_TTS_VOICES", "FunAudioLLM/CosyVoice2-0.5B:anna,FunAudioLLM/CosyVoice2-0.5B:alex"
 ).split(",") if v.strip()]
-# 朗读用哪家：gateway（网关 CosyVoice）或 edge（微软 Edge 免费语音）
-TTS_PROVIDER = _env("TTS_PROVIDER", "gateway")
+# 朗读用哪家：edge（微软 Edge 免费语音，默认，不耗积分）或 gateway（网关 CosyVoice，按次计费）
+TTS_PROVIDER = _env("TTS_PROVIDER", "edge")
+# 幂等键请求头：网络重试时带同一个键，网关不会重复扣积分
+GATEWAY_IDEMPOTENCY_HEADER = _env("GATEWAY_IDEMPOTENCY_HEADER", "Idempotency-Key")
+
+# ---- AI 调用：超时、每日上限、后台任务 ----
+AI_TIMEOUT_SEC = float(_env("AI_TIMEOUT_SEC", "90"))  # 单次大模型调用超时（秒）
+AI_DAILY_LIMIT = int(_env("AI_DAILY_LIMIT", "0") or 0)  # 每个用户每天最多调用大模型几次，0 = 不限（管理员不受限）
+JOB_WORKERS = int(_env("JOB_WORKERS", "4") or 4)  # 同时处理出题/评分/笔记的后台线程数
+
+# ---- 防暴力尝试 ----
+TRUST_PROXY = _env("TRUST_PROXY", "0") == "1"  # 部署在 Nginx 等反向代理后面时设为 1，用 X-Forwarded-For 识别 IP
+
+# ---- 磁盘 ----
+TTS_CACHE_MAX_MB = int(_env("TTS_CACHE_MAX_MB", "500") or 500)  # 朗读缓存上限，超出后清掉最久没用的
+AUDIO_RETENTION_DAYS = int(_env("AUDIO_RETENTION_DAYS", "90") or 0)  # 练习录音保留天数，0 = 永久
 
 # ---- 大模型（不用网关时的备选：OpenAI 兼容接口：DeepSeek / 通义千问 / Kimi / OpenAI 等）----
 LLM_BASE_URL = _env("LLM_BASE_URL", "https://api.deepseek.com/v1")

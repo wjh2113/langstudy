@@ -4,30 +4,18 @@ set -e
 cd "$(dirname "$0")"
 
 # ---- backend ----
-PY=""
-for c in python3.12 python3.11 python3.10 python3; do
-  if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'; then
-    PY=$c
-    break
-  fi
-done
-if [ -z "$PY" ]; then
-  echo "需要 Python 3.10 或更高版本（当前 python3 太旧，类型注解无法运行）"
-  exit 1
-fi
-if [ -d backend/.venv ] && ! backend/.venv/bin/python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
-  echo "▶ 现有虚拟环境 Python 低于 3.10，重新创建…"
-  rm -rf backend/.venv
-fi
 if [ ! -d backend/.venv ]; then
-  echo "▶ 创建 Python 虚拟环境并安装依赖（$PY）…"
-  "$PY" -m venv backend/.venv
+  echo "▶ 创建 Python 虚拟环境并安装依赖…"
+  python3 -m venv backend/.venv
   backend/.venv/bin/pip install -q -r backend/requirements.txt
+elif [ backend/requirements.txt -nt backend/.venv/pyvenv.cfg ]; then
+  backend/.venv/bin/pip install -q -r backend/requirements.txt && touch backend/.venv/pyvenv.cfg
 fi
 [ -f backend/.env ] || { cp backend/.env.example backend/.env; echo "▶ 已生成 backend/.env，记得填写 LLM_API_KEY（不填为演示模式）"; }
 
 # ---- frontend ----
-if [ ! -d frontend/node_modules ]; then
+# 第一次运行，或 package.json 更新过（比如新增了 vue-router / TypeScript）时安装依赖
+if [ ! -d frontend/node_modules ] || [ frontend/package.json -nt frontend/node_modules/.package-lock.json ]; then
   echo "▶ 安装前端依赖…"
   (cd frontend && npm install)
 fi

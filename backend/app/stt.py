@@ -9,10 +9,12 @@ class STTError(RuntimeError):
 
 def transcribe(audio: bytes, filename: str, language: str, mime: str = "") -> str:
     if config.gateway_enabled():
+        from . import ai
         from .gateway import GatewayError, transcribe as gw_transcribe
 
         try:
-            return gw_transcribe(audio, filename, mime, language)
+            with ai.track("stt", config.GATEWAY_CAP_SPEECH, chars=len(audio)):
+                return gw_transcribe(audio, filename, mime, language)
         except GatewayError as e:
             raise STTError(str(e)) from e
     if not config.stt_server_enabled():

@@ -1,7 +1,8 @@
 """Study notes for a practice topic: vocabulary, grammar points and sentence patterns."""
 from . import config
 from .languages import MODES, get_language
-from .llm import LLMError, chat_json
+from .ai import chat_json
+from .llm import LLMError
 
 SYSTEM = (
     "你是一名外语老师，为中文母语的学习者整理话题学习笔记。"
@@ -87,4 +88,4 @@ def generate_notes(content: dict) -> dict:
         from .demo import sample_notes
 
         return normalize(sample_notes(content.get("language", "en")))
-    return normalize(chat_json(SYSTEM, build_prompt(content), temperature=0.5))
+    return normalize(chat_json(SYSTEM, build_prompt(content), temperature=0.5, fast=True, task="notes"))

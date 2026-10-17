@@ -1,4 +1,4 @@
-"""SQLite storage: users, login tokens, invite codes, practice sessions and reports."""
+"""SQLite storage: users, login tokens, invite codes, practice sessions, answers and reports."""
 import json
 import sqlite3
 import uuid
@@ -38,74 +38,14 @@ def _exclusive():
 
 
 def init():
-    boot = sqlite3.connect(config.DB_PATH, timeout=10, isolation_level=None)
-    boot.execute("PRAGMA journal_mode=WAL")
-    boot.close()
-    with _conn() as c:
-        c.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                password_hash TEXT NOT NULL,
-                role TEXT NOT NULL DEFAULT 'user',          -- admin | user
-                disabled INTEGER NOT NULL DEFAULT 0,
-                invited_by INTEGER,
-                invite_code TEXT,
-                created_at TEXT NOT NULL,
-                last_login_at TEXT
-            );
-            CREATE TABLE IF NOT EXISTS auth_tokens (
-                token_hash TEXT PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                created_at TEXT NOT NULL,
-                expires_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS invites (
-                code TEXT PRIMARY KEY,
-                created_by INTEGER NOT NULL,
-                created_at TEXT NOT NULL,
-                expires_at TEXT,
-                max_uses INTEGER NOT NULL DEFAULT 1,
-                uses INTEGER NOT NULL DEFAULT 0,
-                note TEXT,
-                revoked INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE TABLE IF NOT EXISTS cards (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                language TEXT NOT NULL,
-                kind TEXT NOT NULL,                -- word | pattern | sentence
-                front TEXT NOT NULL,               -- what to say / recognise (target language)
-                reading TEXT, meaning TEXT, example TEXT, example_translation TEXT,
-                extra TEXT,                        -- sentence cards: what the learner originally said
-                source_session TEXT,
-                created_at TEXT NOT NULL,
-                due_at TEXT NOT NULL,
-                interval_days REAL NOT NULL DEFAULT 0,
-                ease REAL NOT NULL DEFAULT 2.5,
-                reps INTEGER NOT NULL DEFAULT 0,
-                lapses INTEGER NOT NULL DEFAULT 0,
-                last_reviewed_at TEXT,
-                UNIQUE (user_id, language, kind, front)
-            );
-            CREATE TABLE IF NOT EXISTS sessions (
-                id TEXT PRIMARY KEY,
-                created_at TEXT NOT NULL,
-                language TEXT, level TEXT, mode TEXT, topic TEXT, title TEXT,
-                content TEXT NOT NULL,
-                turns TEXT,
-                report TEXT,
-                overall INTEGER
-            );
-            """
-        )
-        cols = {r["name"] for r in c.execute("PRAGMA table_info(sessions)")}
-        if "user_id" not in cols:  # upgrade from the single-user version
-            c.execute("ALTER TABLE sessions ADD COLUMN user_id INTEGER")
-        if "notes" not in cols:  # study notes (vocabulary / grammar / patterns)
-            c.execute("ALTER TABLE sessions ADD COLUMN notes TEXT")
-            c.execute("ALTER TABLE sessions ADD COLUMN notes_at TEXT")
+    """Create / upgrade the schema (see migrations.py)."""
+    from . import migrations
+
+    conn = _conn()
+    try:
+        migrations.run(conn)
+    finally:
+        conn.close()
 
 
 # ------------------------------------------------------------------ users
@@ -287,27 +227,151 @@ def create_session(content: dict, user_id: int) -> str:
     return sid
 
 
-def save_report(sid: str, turns: list, report: dict):
+def previous_session(user_id: int, language: str, level: str, mode: str, topic: str):
+    """The user's latest session with the same language, level, mode and topic (for reuse)."""
     with _conn() as c:
-        c.execute(
-            "UPDATE sessions SET turns=?, report=?, overall=? WHERE id=?",
-            (json.dumps(turns, ensure_ascii=False), json.dumps(report, ensure_ascii=False), report.get("overall"), sid),
-        )
+        r = c.execute(
+            """SELECT id, created_at, title, overall, report IS NOT NULL AS done FROM sessions
+               WHERE user_id=? AND language=? AND level=? AND mode=? AND lower(trim(topic))=lower(trim(?))
+               ORDER BY created_at DESC LIMIT 1""",
+            (user_id, language, level, mode, topic),
+        ).fetchone()
+    if not r:
+        return None
+    return {"id": r["id"], "createdAt": r["created_at"], "title": r["title"], "overall": r["overall"], "done": bool(r["done"])}
+
+
+def repeat_session(sid: str, user_id: int) -> str:
+    """A fresh attempt at an earlier session's material (and its study notes) — no model call."""
+    old = get_session(sid)
+    new_id = create_session(old["content"], user_id)
+    with _conn() as c:
+        c.execute("UPDATE sessions SET notes=(SELECT notes FROM sessions WHERE id=?), notes_at=(SELECT notes_at FROM sessions WHERE id=?) WHERE id=?",
+                  (sid, sid, new_id))
+    return new_id
+
+
+def get_translations(keys: list) -> dict:
+    if not keys:
+        return {}
+    with _conn() as c:
+        rows = c.execute(f"SELECT key, translation FROM translations WHERE key IN ({','.join('?' * len(keys))})", keys).fetchall()
+    return {r["key"]: r["translation"] for r in rows}
+
+
+def save_translations(items: list):
+    """items: (key, language, text, translation)"""
+    with _conn() as c:
+        c.executemany("INSERT OR REPLACE INTO translations (key, language, text, translation, created_at) VALUES (?,?,?,?,?)",
+                      [(*i, _now()) for i in items])
+
+
+def save_report(sid: str, turns: list, report: dict):
+    now = _now()
+    with _exclusive() as c:
+        row = c.execute("SELECT user_id, language FROM sessions WHERE id=?", (sid,)).fetchone()
+        _replace_turns(c, sid, row["user_id"], row["language"], turns, now)
+        _grade_turns(c, sid, report)
+        c.execute("UPDATE sessions SET turns=NULL, report=?, overall=?, state=NULL, updated_at=? WHERE id=?",
+                  (json.dumps(report, ensure_ascii=False), report.get("overall"), now, sid))
+
+
+def set_share_token(sid: str, token):
+    with _conn() as c:
+        c.execute("UPDATE sessions SET share_token=? WHERE id=?", (token, sid))
+
+
+def session_by_share_token(token: str):
+    with _conn() as c:
+        row = c.execute("SELECT id FROM sessions WHERE share_token=? AND report IS NOT NULL", (token,)).fetchone()
+    return get_session(row["id"]) if row else None
+
+
+def mistake_stats(language=None, limit: int = 20) -> dict:
+    """Across all users: how many answers were flagged, and the most frequent correction notes."""
+    where, args = "WHERE ok IS NOT NULL AND kind NOT IN ('shadow','dictation')", []
+    if language:
+        where += " AND language=?"
+        args.append(language)
+    with _conn() as c:
+        total, flagged = c.execute(f"SELECT COUNT(*), COALESCE(SUM(ok=0), 0) FROM turns {where}", args).fetchone()
+        top = c.execute(
+            f"SELECT notes, COUNT(*) AS n, COUNT(DISTINCT user_id) AS users FROM turns {where} AND ok=0 AND notes IS NOT NULL "
+            "GROUP BY notes ORDER BY n DESC LIMIT ?", (*args, limit)).fetchall()
+        by_kind = c.execute(
+            f"SELECT kind, COUNT(*) AS n, COALESCE(SUM(ok=0), 0) AS bad FROM turns {where} GROUP BY kind", args).fetchall()
+    return {
+        "graded": total, "flagged": flagged,
+        "topNotes": [{"notes": r["notes"], "count": r["n"], "users": r["users"]} for r in top],
+        "byKind": [{"kind": r["kind"], "graded": r["n"], "flagged": r["bad"]} for r in by_kind],
+    }
 
 
 def get_session(sid: str):
     with _conn() as c:
         row = c.execute("SELECT * FROM sessions WHERE id=?", (sid,)).fetchone()
-    if not row:
-        return None
+        if not row:
+            return None
+        turn_rows = c.execute("SELECT data FROM turns WHERE session_id=? ORDER BY seq", (sid,)).fetchall()
     return {
         "id": row["id"],
         "userId": row["user_id"],
         "createdAt": row["created_at"],
         "content": json.loads(row["content"]),
-        "turns": json.loads(row["turns"]) if row["turns"] else [],
+        "turns": [json.loads(r["data"]) for r in turn_rows],
+        "state": json.loads(row["state"]) if row["state"] else None,
         "report": json.loads(row["report"]) if row["report"] else None,
+        "shareToken": row["share_token"],
     }
+
+
+_TURN_COLS = ("session_id", "user_id", "seq", "turn_key", "language", "kind", "follow_up", "prompt", "reference",
+              "answer", "input", "duration_sec", "plays", "text_hidden", "pron_score", "audio_url", "data",
+              "created_at", "updated_at")
+
+
+def _turn_row(sid: str, user_id, language: str, seq: int, t: dict, now: str) -> tuple:
+    return (sid, user_id, seq, str(t.get("id") or f"t{seq}")[:60], language, t.get("kind"), int(bool(t.get("followUp"))),
+            t.get("prompt"), t.get("reference"), t.get("answer"), t.get("input"), t.get("durationSec"), t.get("plays"),
+            int(bool(t.get("textHidden"))), t.get("pronScore"), t.get("audioUrl"), json.dumps(t, ensure_ascii=False),
+            now, now)
+
+
+def _replace_turns(c, sid: str, user_id, language: str, turns: list, now: str):
+    created = {r["turn_key"]: r["created_at"] for r in c.execute("SELECT turn_key, created_at FROM turns WHERE session_id=?", (sid,))}
+    c.execute("DELETE FROM turns WHERE session_id=?", (sid,))
+    rows = []
+    for i, t in enumerate(turns):
+        row = list(_turn_row(sid, user_id, language, i, t, now))
+        row[-2] = created.get(row[3], now)
+        rows.append(row)
+    c.executemany(f"INSERT OR REPLACE INTO turns ({', '.join(_TURN_COLS)}) VALUES ({', '.join('?' * len(_TURN_COLS))})", rows)
+
+
+def save_progress(sid: str, turns: list, state) -> str:
+    """Autosave of an unfinished practice: its answers so far and the UI state needed to resume."""
+    now = _now()
+    with _exclusive() as c:
+        row = c.execute("SELECT user_id, language, report FROM sessions WHERE id=?", (sid,)).fetchone()
+        if row["report"]:
+            raise ValueError("这个练习已经评过分了")
+        _replace_turns(c, sid, row["user_id"], row["language"], turns, now)
+        c.execute("UPDATE sessions SET state=?, updated_at=? WHERE id=?",
+                  (json.dumps(state, ensure_ascii=False) if state is not None else None, now, sid))
+    return now
+
+
+def _grade_turns(c, sid: str, report: dict):
+    for it in report.get("items", []):
+        key = it.get("key")
+        if not key:
+            continue
+        ok = it.get("ok")
+        if it.get("kind") == "dictation":
+            ok = it.get("correct")
+        c.execute("UPDATE turns SET ok=?, corrected=?, better=?, notes=? WHERE session_id=? AND turn_key=?",
+                  (None if ok is None else int(bool(ok)), it.get("corrected") or None, it.get("better") or None,
+                   it.get("notes") or None, sid, key))
 
 
 def list_sessions(user_id=None, limit: int = 200):
@@ -316,14 +380,16 @@ def list_sessions(user_id=None, limit: int = 200):
     with _conn() as c:
         rows = c.execute(
             f"""SELECT s.id, s.created_at, s.language, s.level, s.mode, s.topic, s.title, s.overall,
-                       s.report IS NOT NULL AS done, s.notes IS NOT NULL AS has_notes, u.username
+                       s.report IS NOT NULL AS done, s.notes IS NOT NULL AS has_notes, u.username, s.updated_at,
+                       (SELECT COUNT(*) FROM turns t WHERE t.session_id=s.id) AS answered
                 FROM sessions s LEFT JOIN users u ON u.id=s.user_id {where}
                 ORDER BY s.created_at DESC LIMIT ?""",
             (*args, limit),
         ).fetchall()
     return [
         {**{k: r[k] for k in ("id", "language", "level", "mode", "topic", "title", "overall", "username")},
-         "createdAt": r["created_at"], "done": bool(r["done"]), "hasNotes": bool(r["has_notes"])}
+         "createdAt": r["created_at"], "updatedAt": r["updated_at"], "done": bool(r["done"]),
+         "hasNotes": bool(r["has_notes"]), "answered": r["answered"]}
         for r in rows
     ]
 

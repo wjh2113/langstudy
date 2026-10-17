@@ -55,7 +55,7 @@ def test_demo_notes_and_storage():
 def test_notes_with_fake_llm():
     orig_demo, orig_chat = config.demo_mode, notes.chat_json
     config.demo_mode = lambda: False
-    notes.chat_json = lambda s, u, temperature=0.5: {"vocabulary": [{"word": "menu", "meaning": "菜单"}]}
+    notes.chat_json = lambda s, u, temperature=0.5, **kw: {"vocabulary": [{"word": "menu", "meaning": "菜单"}]}
     try:
         assert notes.generate_notes(CONTENT)["vocabulary"][0]["word"] == "menu"
     finally:

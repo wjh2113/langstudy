@@ -69,7 +69,7 @@ def test_evaluate_demo_text_only():
 def test_evaluate_with_fake_llm(monkeypatch=None):
     calls = {}
 
-    def fake_chat_json(system, user, temperature=0.7):
+    def fake_chat_json(system, user, temperature=0.7, **kw):
         calls["prompt"] = user
         return {"scores": {"listening": 80, "pronunciation": 70, "fluency": 60, "grammar": 75, "vocabulary": 72, "content": 85},
                 "comments": {"grammar": "时态有误"}, "summary": "不错", "strengths": ["a"], "improvements": ["b"],
@@ -100,7 +100,7 @@ def test_evaluate_with_fake_llm(monkeypatch=None):
 def test_followup_demo_and_prompt():
     c = {"language": "ja", "level": "intermediate", "topic": "面接", "intro": "日企面试"}
     r = fu.follow_up(c, "自己紹介をお願いします。", "王です。エンジニアです。")
-    assert r["text"] and r["translation"]
+    assert r["text"] and r["translation"] == ""  # translations are fetched on demand
     try:
         fu.follow_up(c, "Q", "  ")
         assert False, "empty answer should fail"
@@ -113,19 +113,19 @@ def test_followup_demo_and_prompt():
 def test_followup_with_fake_llm():
     orig_demo, orig_chat = config.demo_mode, fu.chat_json
     config.demo_mode = lambda: False
-    fu.chat_json = lambda s, u, temperature=0.7, fast=False: {"text": "Which part did you enjoy most?", "translation": "你最喜欢哪部分？"}
+    fu.chat_json = lambda s, u, temperature=0.7, **kw: {"text": "Which part did you enjoy most?", "translation": "你最喜欢哪部分？"}
     try:
         r = fu.follow_up({"language": "en", "level": "beginner", "topic": "t"}, "Q", "I like my job")
     finally:
         config.demo_mode, fu.chat_json = orig_demo, orig_chat
-    assert r == {"text": "Which part did you enjoy most?", "translation": "你最喜欢哪部分？"}
+    assert r == {"text": "Which part did you enjoy most?", "translation": ""}
 
 
 def test_evaluate_labels_followup():
     calls = {}
     orig_demo, orig_chat = config.demo_mode, ev.chat_json
     config.demo_mode = lambda: False
-    ev.chat_json = lambda s, u, temperature=0.3: calls.setdefault("p", u) and {"scores": {}}
+    ev.chat_json = lambda s, u, temperature=0.3, **kw: calls.setdefault("p", u) and {"scores": {}}
     try:
         r = ev.evaluate(CONTENT, [{"kind": "answer", "prompt": "Q1", "answer": "a b c", "input": "text"},
                                   {"kind": "answer", "prompt": "Why?", "answer": "because", "input": "text", "followUp": True}])
