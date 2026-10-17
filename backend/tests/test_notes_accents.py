@@ -96,6 +96,34 @@ def test_synthesize_picks_voice_by_accent():
     assert used == [("edge", "en-IN-PrabhatNeural"), ("gateway", config.GATEWAY_TTS_VOICES[0])]
 
 
+def test_synthesize_single_flight():
+    """Two callers of the same sentence wait for one synthesis."""
+    config.TTS_CACHE_DIR = Path(tempfile.mkdtemp())
+    calls = {"n": 0}
+
+    async def fake_edge(text, voice, rate):
+        calls["n"] += 1
+        await asyncio.sleep(0.05)
+        return b"mp3-bytes"
+
+    tts._edge = fake_edge
+    orig = config.tts_uses_gateway
+    config.tts_uses_gateway = lambda: False
+
+    async def both():
+        a, b = await asyncio.gather(
+            tts.synthesize("Hello there", "en", 0, 1.0, "default"),
+            tts.synthesize("Hello there", "en", 0, 1.0, "default"),
+        )
+        assert a == b == b"mp3-bytes"
+
+    try:
+        asyncio.run(both())
+    finally:
+        config.tts_uses_gateway = orig
+    assert calls["n"] == 1
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

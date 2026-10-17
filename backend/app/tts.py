@@ -53,6 +53,7 @@ async def _gateway(text: str, voice: str, rate: float) -> bytes:
 _prune_lock = threading.Lock()
 _writes_since_prune = 0
 PRUNE_EVERY = 20  # check the cache size every N new files
+_synth_locks: dict[str, asyncio.Lock] = {}
 
 
 def prune_cache(max_bytes: int | None = None) -> int:
@@ -109,18 +110,35 @@ async def synthesize(text: str, language: str, voice_index: int = 0, rate: float
 
     key = hashlib.sha1(f"{provider}|{voice}|{rate:.2f}|{text}".encode()).hexdigest()
     path = config.TTS_CACHE_DIR / f"{key}.mp3"
+    hit = _read_cached(path)
+    if hit is not None:
+        return hit
+    # Two clicks on the same sentence share one synthesis, same as 小树学堂.
+    lock = _synth_locks.setdefault(key, asyncio.Lock())
+    try:
+        async with lock:
+            hit = _read_cached(path)
+            if hit is not None:
+                return hit
+            audio = await (_gateway(text, voice, rate) if provider == "gateway" else _edge(text, voice, rate))
+            if not audio:
+                raise TTSError("语音合成没有返回音频")
+            tmp = path.with_suffix(".part")
+            tmp.write_bytes(audio)
+            os.replace(tmp, path)
+            global _writes_since_prune
+            _writes_since_prune += 1
+            if _writes_since_prune >= PRUNE_EVERY:
+                _writes_since_prune = 0
+                await asyncio.to_thread(prune_cache)
+            return audio
+    finally:
+        if not lock.locked():
+            _synth_locks.pop(key, None)
+
+
+def _read_cached(path) -> bytes | None:
     if path.exists() and path.stat().st_size > 0:
         _touch(path)
         return path.read_bytes()
-    audio = await (_gateway(text, voice, rate) if provider == "gateway" else _edge(text, voice, rate))
-    if not audio:
-        raise TTSError("语音合成没有返回音频")
-    tmp = path.with_suffix(".part")
-    tmp.write_bytes(audio)
-    os.replace(tmp, path)
-    global _writes_since_prune
-    _writes_since_prune += 1
-    if _writes_since_prune >= PRUNE_EVERY:
-        _writes_since_prune = 0
-        await asyncio.to_thread(prune_cache)
-    return audio
+    return None

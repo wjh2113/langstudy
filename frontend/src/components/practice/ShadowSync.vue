@@ -46,7 +46,8 @@ export default defineComponent({
       let playStart: number | null = null
       emit('play')
       await play(`${props.id}-sync`, props.text, {
-        language: props.env.language, rate: props.env.rate, onStart: () => (playStart = performance.now()),
+        language: props.env.language, rate: props.env.rate, chunked: false,
+        onStart: () => (playStart = performance.now()),
       }).catch(() => {})
       const playEnd = performance.now()
       await new Promise((r) => setTimeout(r, 900)) // let the learner finish the last word
