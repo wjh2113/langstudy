@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ.setdefault("GATEWAY_API_KEY", "")
 os.environ.setdefault("LLM_API_KEY", "")
 
-from app.import_pack import parse_documents, read_upload  # noqa: E402
+from app.import_pack import PROMPT, parse_documents, read_upload  # noqa: E402
 
 SAMPLE = """
 # 餐厅点餐
@@ -116,6 +116,12 @@ def test_dialogue_aliases_and_zip():
         zf.writestr("__MACOSX/order.md", "skip")
     texts = read_upload("pack.zip", buf.getvalue())
     assert len(texts) == 1 and "点餐对话" in texts[0]
+
+
+def test_prompt_follows_the_courseware():
+    assert "一份对应话题的课件" in PROMPT
+    assert "不要为了凑数去编" in PROMPT
+    assert "不要用代码块把全文包起来" in PROMPT
 
 
 if __name__ == "__main__":
