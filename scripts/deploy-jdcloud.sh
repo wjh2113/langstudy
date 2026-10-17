@@ -28,6 +28,7 @@ rsync -az \
   --exclude 'frontend/dist' \
   --exclude '__pycache__' \
   --exclude '.DS_Store' \
+  --exclude 'design' \
   "${ROOT}/" "${REMOTE}:${STAGING}/"
 rsync -az "${ROOT}/frontend/dist/" "${REMOTE}:${STAGING}/frontend/dist/"
 
