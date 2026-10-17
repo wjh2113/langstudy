@@ -2,14 +2,19 @@
   <div class="home" :data-lang="prefs.language">
     <h1 class="home__title">今天练什么话题？</h1>
 
-    <form class="searchbar" @submit.prevent="submit()">
-      <AppIcon name="search" :size="22" class="searchbar__icon" />
-      <input v-model="topic" class="searchbar__input" maxlength="200" aria-label="话题"
-        :placeholder="prefs.language === 'ja' ? '例如：日企面试、在便利店购物、预约餐厅…' : '例如：面试自我介绍、餐厅点餐、机场问路…'" />
-      <button class="btn btn--primary searchbar__btn" :disabled="!topic.trim() || busy">
-        {{ busy ? '正在生成…' : '生成练习' }}<AppIcon v-if="!busy" name="arrow-right" :size="18" />
+    <div class="home__ask">
+      <form class="searchbar" @submit.prevent="submit()">
+        <AppIcon name="search" :size="22" class="searchbar__icon" />
+        <input v-model="topic" class="searchbar__input" maxlength="200" aria-label="话题"
+          :placeholder="prefs.language === 'ja' ? '例如：日企面试、在便利店购物、预约餐厅…' : '例如：面试自我介绍、餐厅点餐、机场问路…'" />
+        <button class="btn btn--primary searchbar__btn" :disabled="!topic.trim() || busy">
+          {{ busy && !pasting ? '正在生成…' : '生成练习' }}<AppIcon v-if="!(busy && !pasting)" name="arrow-right" :size="18" />
+        </button>
+      </form>
+      <button type="button" class="btn btn--ghost home__upload" :disabled="busy" @click="uploadOpen = true">
+        <AppIcon name="doc" :size="18" /> 上传资料
       </button>
-    </form>
+    </div>
     <div class="chips chips--center">
       <button v-for="s in suggestions[prefs.language] || []" :key="s" type="button" class="chip" @click="topic = s">{{ s }}</button>
     </div>
@@ -17,11 +22,11 @@
     <div v-if="busy" class="progress-card" role="status">
       <div class="progress-card__row">
         <span class="spinner" aria-hidden="true" />
-        <strong>正在生成练习内容…</strong>
+        <strong>{{ pasting ? '正在整理课程包…' : '正在生成练习内容…' }}</strong>
         <span class="muted">{{ waited }} 秒</span>
       </div>
       <div class="bar"><span :style="{ width: `${Math.min(95, waited * 4)}%` }" /></div>
-      <p class="muted">一般需要 10–30 秒，生成好会自动进入练习。</p>
+      <p class="muted">{{ uploadOpen || pasting ? '正在本地提取文字，并整理成课程包…' : '一般需要 10–30 秒，生成好会自动进入练习。' }}</p>
     </div>
     <p v-if="error" class="banner banner--error"><AppIcon name="alert" /> {{ error }}</p>
 
@@ -115,6 +120,19 @@
       <AppIcon name="info" /> 现在是演示模式：还没有配置网关或大模型，会使用内置示例内容。
     </p>
 
+    <ModalDialog :open="uploadOpen" title="上传资料" icon="doc" @close="uploadOpen = false">
+      <p class="muted">支持 PDF、PPTX、Word，也可以直接粘贴文字。文字在本地提取，只调用一次模型做归类，原文不会被改写。</p>
+      <label class="upload-pick">
+        <input type="file" accept=".pdf,.pptx,.docx,application/pdf" :disabled="busy" @change="onFile" />
+        <span>{{ file ? file.name : '选择 PDF、PPTX 或 DOCX' }}</span>
+      </label>
+      <textarea v-model="paste" class="upload-text" rows="8" maxlength="40000" placeholder="或者把课件文字粘贴在这里" />
+      <div class="modal__actions">
+        <button type="button" class="btn btn--ghost" @click="uploadOpen = false">取消</button>
+        <button type="button" class="btn btn--primary" :disabled="busy || (!file && !paste.trim())" @click="upload">整理成课程包</button>
+      </div>
+    </ModalDialog>
+
     <ModalDialog :open="!!reuse" title="这个话题练过了" icon="history" @close="reuse = null">
       <p v-if="reuse">上次练习「{{ reuse.title }}」是在 {{ dateTime(reuse.createdAt) }}<template v-if="reuse.done">，得了 {{ reuse.overall ?? '—' }} 分</template>。</p>
       <p class="muted">用上次的题不会再调用 AI 生成，马上就能开始，学习笔记也会一起带过来。</p>
@@ -172,6 +190,10 @@ export default defineComponent({
     const waited = ref(0)
     const error = ref('')
     const reuse = ref<PreviousSession | null>(null)
+    const uploadOpen = ref(false)
+    const file = ref<File | null>(null)
+    const paste = ref('')
+    const pasting = ref(false)
     let pending: Record<string, any> | null = null
 
     const languages = computed(() => store.config?.languages || [])
@@ -264,8 +286,38 @@ export default defineComponent({
     const drill = () => coach.value?.weakest &&
       generate({ language: prefs.language, level: prefs.level, mode: '', topic: '', count: prefs.count, focus: coach.value.weakest.key })
 
+    function onFile(e: Event) {
+      const input = e.target as HTMLInputElement
+      file.value = input.files?.[0] || null
+    }
+
+    async function upload() {
+      if (busy.value || (!file.value && !paste.value.trim())) return
+      const form = new FormData()
+      form.set('language', prefs.language)
+      form.set('level', prefs.level)
+      if (file.value) form.set('file', file.value)
+      if (paste.value.trim()) form.set('text', paste.value.trim())
+      pasting.value = true
+      uploadOpen.value = false
+      busy.value = true
+      waited.value = 0
+      error.value = ''
+      try {
+        const res = await api.courseUpload(form, (s) => (waited.value = s))
+        router.push(`/course/${res.id}`)
+      } catch (e: any) {
+        error.value = e.message
+        uploadOpen.value = true
+      } finally {
+        busy.value = false
+        pasting.value = false
+      }
+    }
+
     return {
-      store, prefs, topic, busy, waited, error, reuse, languages, levelOptions, regions, accentKey, currentAccent, currentRegion,
+      store, prefs, topic, busy, waited, error, reuse, uploadOpen, file, paste, pasting, onFile, upload,
+      languages, levelOptions, regions, accentKey, currentAccent, currentRegion,
       regionAccents, pickRegion, hasCount, countHint, coach, autoApplied, unfinished, submit, startNew, useLast, drill,
       setPrefs, setAccent, modes: MODES, suggestions: SUGGESTIONS, LANG_NAMES, LEVEL_NAMES, MODE_NAMES, dateTime,
     }

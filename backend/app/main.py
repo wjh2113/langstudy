@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from . import config, db, jobs, maintenance
 from .deps import current_user
 from .languages import public_languages
-from .routers import admin, auth, cards, practice, sessions, speech
+from .routers import admin, auth, cards, courses, practice, sessions, speech
 
 
 @asynccontextmanager
@@ -26,7 +26,7 @@ async def lifespan(_app: FastAPI):
 db.init()  # migrations run on import so scripts and tests get the current schema too
 app = FastAPI(title="LangStudy", version="0.3.0", lifespan=lifespan)
 
-for r in (auth.router, admin.router, practice.router, sessions.router, cards.router, speech.router):
+for r in (auth.router, admin.router, practice.router, sessions.router, cards.router, speech.router, courses.router):
     app.include_router(r)
 
 

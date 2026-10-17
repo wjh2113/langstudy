@@ -214,6 +214,23 @@ def m007_share_links(c):
     c.execute("CREATE UNIQUE INDEX idx_sessions_share ON sessions(share_token) WHERE share_token IS NOT NULL")
 
 
+def m008_courses(c):
+    """A course pack: several practices made from one uploaded worksheet."""
+    _script(c, """
+        CREATE TABLE courses (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            title TEXT,
+            topic TEXT,
+            language TEXT,
+            source_name TEXT,
+            created_at TEXT NOT NULL,
+            items TEXT NOT NULL
+        );
+        CREATE INDEX idx_courses_user ON courses(user_id, created_at);
+    """)
+
+
 MIGRATIONS = [
     (1, m001_baseline),
     (2, m002_translations),
@@ -222,6 +239,7 @@ MIGRATIONS = [
     (5, m005_auth_failures),
     (6, m006_jobs),
     (7, m007_share_links),
+    (8, m008_courses),
 ]
 
 

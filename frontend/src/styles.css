@@ -432,10 +432,21 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
 .shell--home .shell__main { align-items: center; padding-top: 48px; }
 .home { width: 100%; max-width: 1460px; display: flex; flex-direction: column; gap: 24px; }
 .home__title { text-align: center; font-size: 56px; font-weight: 800; letter-spacing: .02em; margin-bottom: 12px; }
+.home__ask { display: flex; align-items: center; gap: 12px; width: min(960px, 100%); margin: 0 auto; }
+.home__upload { height: 68px; padding: 0 22px; white-space: nowrap; }
 .searchbar {
-  display: flex; align-items: center; width: min(960px, 100%); margin: 0 auto; height: 68px; padding-left: 20px;
+  display: flex; align-items: center; flex: 1; min-width: 0; height: 68px; padding-left: 20px;
   border: 1px solid var(--border-strong); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); overflow: hidden;
 }
+.upload-pick {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px dashed var(--border-strong); border-radius: 12px; cursor: pointer;
+}
+.upload-pick input { max-width: 100%; }
+.upload-text { width: 100%; margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); resize: vertical; }
+.course__list { list-style: none; display: grid; gap: 12px; padding: 0; margin: 0; }
+.course__item { display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center; }
+.course__no { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--primary-soft); color: var(--primary); font-weight: 700; }
+.course__notes { margin-top: 8px; }
 .searchbar:focus-within { border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-soft); }
 .searchbar__icon { color: var(--text-2); }
 .searchbar__input { flex: 1; min-width: 0; height: 100%; padding: 0 16px; border: 0; outline: 0; background: transparent; font-size: 18px; }
@@ -992,7 +1003,11 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
   .brand__name { font-size: 22px; }
   .topbar__sep, .topbar__tagline, .head-crumb, .usermenu__name { display: none; }
   .home__title { font-size: 34px; }
+  .home__ask { flex-wrap: wrap; }
+  .home__upload { width: 100%; height: 52px; }
   .searchbar { flex-wrap: wrap; height: auto; padding: 0; border: 0; background: none; box-shadow: none; gap: 12px; }
+  .course__item { grid-template-columns: auto 1fr; }
+  .course__item .btn { grid-column: 2; justify-self: start; }
   .searchbar:focus-within { box-shadow: none; }
   .searchbar__icon { position: absolute; left: 18px; top: 17px; z-index: 1; }
   .searchbar__input { flex: 1 1 100%; height: 56px; padding-left: 50px; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface); }

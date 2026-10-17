@@ -541,3 +541,25 @@ def delete_card(card_id: int):
 def delete_session(sid: str):
     with _conn() as c:
         c.execute("DELETE FROM sessions WHERE id=?", (sid,))
+
+
+def create_course(user_id: int, title: str, topic: str, language: str, source_name: str, items: list) -> str:
+    cid = uuid.uuid4().hex[:12]
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO courses (id, user_id, title, topic, language, source_name, created_at, items) VALUES (?,?,?,?,?,?,?,?)",
+            (cid, user_id, title, topic, language, source_name, _now(), json.dumps(items, ensure_ascii=False)),
+        )
+    return cid
+
+
+def get_course(cid: str):
+    with _conn() as c:
+        r = c.execute("SELECT * FROM courses WHERE id=?", (cid,)).fetchone()
+    if not r:
+        return None
+    return {
+        "id": r["id"], "userId": r["user_id"], "title": r["title"], "topic": r["topic"],
+        "language": r["language"], "sourceName": r["source_name"] or "", "createdAt": r["created_at"],
+        "items": json.loads(r["items"]),
+    }

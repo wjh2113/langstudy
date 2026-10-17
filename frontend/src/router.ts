@@ -6,6 +6,7 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'home', component: () => import('./views/HomeView.vue') },
+    { path: '/course/:id', name: 'course', component: () => import('./views/CoursePage.vue') },
     { path: '/practice/:id', name: 'practice', component: () => import('./views/PracticePage.vue'), meta: { bare: true } },
     { path: '/report/:id', name: 'report', component: () => import('./views/ReportPage.vue') },
     { path: '/review', name: 'review', component: () => import('./views/ReviewView.vue') },

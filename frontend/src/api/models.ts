@@ -18,6 +18,7 @@ export interface Content {
   topic: string
   title: string
   focus?: { key: string; name: string }
+  notesLocked?: boolean
   intro?: string
   scene?: string
   goal?: string
@@ -110,6 +111,24 @@ export interface Env {
   recognitionSupported: boolean
   pronounceServer: boolean
   textClass: string
+}
+
+export interface CourseItem {
+  key: string
+  kind: 'questions' | 'notes' | 'dictation' | 'chat' | 'dialogue' | 'listening' | 'introduce'
+  title: string
+  blurb: string
+  sessionId: string
+}
+
+export interface CoursePack {
+  id: string
+  title: string
+  topic: string
+  language: Lang
+  sourceName: string
+  createdAt: string
+  items: CourseItem[]
 }
 
 export interface Notes {

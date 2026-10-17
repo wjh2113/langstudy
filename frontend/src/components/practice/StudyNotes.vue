@@ -10,7 +10,12 @@
           <button type="button" class="btn btn--sm btn--ghost" @click="confirming = false">取消</button>
           <button type="button" class="btn btn--sm btn--primary" :disabled="busy" @click="generate">确定</button>
         </template>
-        <button v-else type="button" class="link" :disabled="busy" @click="confirming = true"><AppIcon name="rotate" :size="16" /> 重新生成</button>
+        <template v-else>
+          <button v-if="tab === 'vocabulary' && n.vocabulary.length" type="button" class="btn btn--sm btn--ghost" :disabled="savingAll || allSaved" @click="saveAll">
+            {{ savingAll ? '正在加入…' : allSaved ? '已在生词本' : '全部加入生词本' }}
+          </button>
+          <button v-if="!locked" type="button" class="link" :disabled="busy" @click="confirming = true"><AppIcon name="rotate" :size="16" /> 重新生成</button>
+        </template>
       </div>
     </div>
 
@@ -95,6 +100,7 @@ import SegControl from '../ui/SegControl.vue'
 import StarButton from '../ui/StarButton.vue'
 import { api, type NotesResponse } from '../../api'
 import type { Env, Notes } from '../../api/models'
+import { isSaved, loadSaved, saveCard } from '../../lib/cards'
 import { dateTime } from '../../lib/format'
 
 let seq = 0
@@ -107,6 +113,7 @@ export default defineComponent({
     sessionId: { type: String, required: true },
     env: { type: Object as PropType<Env>, required: true },
     readonly: { type: Boolean, default: false },
+    locked: { type: Boolean, default: false },
     initial: { type: Object as PropType<NotesResponse | null>, default: null },
   },
   emits: ['generated'],
@@ -119,8 +126,10 @@ export default defineComponent({
     const confirming = ref(false)
     const error = ref('')
     const tab = ref<string | number>('vocabulary')
+    const savingAll = ref(false)
     const n = computed(() => (data.value?.notes || { summary: '', vocabulary: [], grammar: [], patterns: [] }) as Notes)
     const hasNotes = computed(() => Boolean(data.value?.notes))
+    const allSaved = computed(() => n.value.vocabulary.length > 0 && n.value.vocabulary.every((v) => isSaved(props.env.language, 'word', v.word)))
     const tabOptions = computed(() => [
       { value: 'vocabulary', label: '单词', badge: n.value.vocabulary.length },
       { value: 'grammar', label: '语法', badge: n.value.grammar.length },
@@ -128,6 +137,7 @@ export default defineComponent({
     ])
 
     onMounted(async () => {
+      if (!props.readonly) loadSaved(props.env.language)
       if (props.initial) return
       try {
         data.value = await api.notes(props.sessionId)
@@ -153,7 +163,26 @@ export default defineComponent({
       }
     }
 
-    return { uid, data, loading, busy, waited, confirming, error, tab, n, hasNotes, tabOptions, generate, dateTime }
+    async function saveAll() {
+      savingAll.value = true
+      error.value = ''
+      try {
+        await loadSaved(props.env.language)
+        for (const v of n.value.vocabulary) {
+          if (isSaved(props.env.language, 'word', v.word)) continue
+          await saveCard({
+            language: props.env.language, kind: 'word', front: v.word, reading: v.reading,
+            meaning: v.meaning, example: v.example, exampleTranslation: v.exampleTranslation, sourceSession: props.sessionId,
+          })
+        }
+      } catch (e: any) {
+        error.value = e.message
+      } finally {
+        savingAll.value = false
+      }
+    }
+
+    return { uid, data, loading, busy, waited, confirming, error, tab, n, hasNotes, allSaved, savingAll, tabOptions, generate, saveAll, dateTime, locked: computed(() => props.locked) }
   },
 })
 </script>

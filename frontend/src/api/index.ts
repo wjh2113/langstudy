@@ -5,7 +5,7 @@ import type {
   RegisterReq, SessionOut, SessionSummary, ShareOut, SpokenText, StartedSession, TTSReq, TranslateOut,
   Turn as ApiTurn,
 } from './types.gen'
-import type { AppConfig, Card, Coach, Content, Notes, PracticeState, Report } from './models'
+import type { AppConfig, Card, Coach, Content, CoursePack, Notes, PracticeState, Report } from './models'
 
 export { ApiError, runJob } from './client'
 
@@ -37,6 +37,9 @@ export const api = {
   config: () => request<AppConfig>('/config'),
   generate: (body: GenerateReq, onTick?: (s: number) => void) =>
     runJob<StartedSession>(request<JobRef>('/generate', post(body)), onTick),
+  courseUpload: (form: FormData, onTick?: (s: number) => void) =>
+    runJob<{ id: string; title: string; topic: string }>(request<JobRef>('/courses', { method: 'POST', body: form }), onTick),
+  course: (id: string) => request<CoursePack>(`/courses/${id}`),
   previous: (q: { language: string; level: string; mode: string; topic: string }) =>
     request<PreviousOut>('/sessions/previous?' + new URLSearchParams(q)),
   repeat: (id: string) => request<StartedSession>(`/sessions/${id}/repeat`, post()),

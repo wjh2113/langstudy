@@ -149,7 +149,7 @@ class JobRef(BaseModel):
 
 class Job(BaseModel):
     id: str
-    kind: Literal["generate", "evaluate", "notes"]
+    kind: Literal["generate", "evaluate", "notes", "course"]
     status: Literal["pending", "running", "done", "error"]
     result: Optional[Any] = None
     error: Optional[str] = None

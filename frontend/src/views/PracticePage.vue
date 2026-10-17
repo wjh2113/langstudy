@@ -23,7 +23,7 @@
         <div v-show="tab === 'practice'" class="practice__flow">
           <component :is="modeComponent" :content="content" :env="env" :turns="turns" :tracker="tracker" @add-turn="addTurn" />
         </div>
-        <StudyNotes v-if="notesOpened" v-show="tab === 'notes'" :session-id="session.id" :env="env" />
+        <StudyNotes v-if="notesOpened" v-show="tab === 'notes'" :session-id="session.id" :env="env" :locked="!!content.notesLocked" />
       </main>
 
       <aside class="practice__aside card" aria-label="练习设置">
