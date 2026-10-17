@@ -7,6 +7,11 @@
       <SegControl :options="rates" :model-value="env.rate" block label="语速" @update:model-value="(v) => setDisplay({ rate: v })" />
     </div>
 
+    <div class="settings__group">
+      <h3><AppIcon name="speaker" /> 音色</h3>
+      <SegControl :options="voices" :model-value="env.voice" block label="音色" @update:model-value="(v) => setDisplay({ voice: v === 'male' ? 'male' : 'female' })" />
+    </div>
+
     <div v-if="env.accents.length > 1" class="settings__group">
       <h3><AppIcon name="headphones" /> 听力口音</h3>
       <AccentSelect :accents="env.accents" :model-value="env.accent" @update:model-value="(k) => setAccent(env.language, k)" />
@@ -94,6 +99,7 @@ export default defineComponent({
     return {
       setDisplay, setAccent, LANG_NAMES, LEVEL_NAMES, MODE_NAMES,
       rates: [0.8, 1, 1.2].map((r) => ({ value: r, label: `${r}×` })),
+      voices: [{ value: 'female', label: '女声' }, { value: 'male', label: '男声' }],
       handsFreeModes: ['questions', 'dialogue', 'chat'],
     }
   },

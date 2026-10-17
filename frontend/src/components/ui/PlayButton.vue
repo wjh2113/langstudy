@@ -20,7 +20,7 @@ export default defineComponent({
     id: { type: String, required: true },
     text: { type: String, required: true },
     env: { type: Object as PropType<Env>, required: true },
-    voiceIndex: { type: Number, default: 0 },
+    voiceIndex: { type: Number },
     label: { type: String, default: '' },
     size: { type: String, default: 'md' }, // sm | md | lg
   },
@@ -31,7 +31,8 @@ export default defineComponent({
       if (active.value) return stop()
       emit('play')
       play(props.id, props.text, {
-        language: props.env.language, rate: props.env.rate, voiceIndex: props.voiceIndex,
+        language: props.env.language, rate: props.env.rate,
+        ...(props.voiceIndex === undefined ? {} : { voiceIndex: props.voiceIndex }),
         accent: props.env.accent || 'default', locale: props.env.accentLocale || null,
       }).catch(() => {})
     }

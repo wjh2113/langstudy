@@ -101,6 +101,8 @@ export interface Env {
   language: Lang
   locale: string
   rate: number
+  voice: 'female' | 'male'
+  voiceIndex: number
   hideText: boolean
   showTranslation: boolean
   handsFree: boolean

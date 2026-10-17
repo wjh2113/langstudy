@@ -19,6 +19,8 @@ export interface Prefs {
 }
 export interface Display {
   rate: number
+  /** Reading voice for single-speaker audio. Dialogue keeps each role's own voice. */
+  voice: 'female' | 'male'
   hideText: boolean
   showTranslation: boolean
   handsFree: boolean
@@ -27,7 +29,7 @@ export interface Display {
 export type Theme = 'system' | 'light' | 'dark'
 
 const DEFAULT_PREFS: Prefs = { language: 'en', level: 'intermediate', mode: 'questions', count: 5, topic: '', autoLevel: false }
-const DEFAULT_DISPLAY: Display = { rate: 1, hideText: false, showTranslation: false, handsFree: false, accents: {} }
+const DEFAULT_DISPLAY: Display = { rate: 1, voice: 'female', hideText: false, showTranslation: false, handsFree: false, accents: {} }
 
 export const store = reactive({
   auth: 'loading' as 'loading' | 'setup' | 'login' | 'register' | 'in',
@@ -77,8 +79,11 @@ export function envFor(lang: Lang): Env {
   const accents = meta?.accents || []
   const accentKey = store.display.accents?.[lang] || 'default'
   const accent = accents.find((a) => a.key === accentKey) || accents[0]
+  const voice = store.display.voice === 'male' ? 'male' : 'female'
   return {
     rate: store.display.rate,
+    voice,
+    voiceIndex: voice === 'male' ? 1 : 0,
     hideText: store.display.hideText,
     showTranslation: store.display.showTranslation,
     handsFree: store.display.handsFree,
@@ -94,7 +99,9 @@ export function envFor(lang: Lang): Env {
   }
 }
 export const env = computed(() => envFor(language.value))
-watchEffect(() => setVoiceOptions({ accent: env.value.accent, locale: env.value.accentLocale }))
+watchEffect(() => setVoiceOptions({
+  accent: env.value.accent, locale: env.value.accentLocale, voiceIndex: env.value.voiceIndex,
+}))
 
 export async function loadConfig() {
   store.configError = ''

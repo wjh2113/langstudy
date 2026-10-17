@@ -23,10 +23,11 @@ export function setServerTTS(enabled: boolean) {
   serverTTS = enabled
 }
 
-// Listening accent chosen by the learner (applies to every play() call)
-let voiceOpts: { accent: string; locale: string | null } = { accent: 'default', locale: null }
-export function setVoiceOptions({ accent = 'default', locale = null }: { accent?: string; locale?: string | null } = {}) {
-  voiceOpts = { accent, locale }
+// Listening accent and reading voice chosen by the learner (applies to every play() call
+// that does not name its own voice, such as a dialogue role).
+let voiceOpts: { accent: string; locale: string | null; voiceIndex: number } = { accent: 'default', locale: null, voiceIndex: 0 }
+export function setVoiceOptions({ accent = 'default', locale = null, voiceIndex = 0 }: { accent?: string; locale?: string | null; voiceIndex?: number } = {}) {
+  voiceOpts = { accent, locale, voiceIndex }
 }
 
 export function stop() {
@@ -101,8 +102,15 @@ export interface PlayOptions {
   onStart?: () => void
 }
 
-export async function play(id: string, text: string, { language = 'en', voiceIndex = 0, rate = 1, accent, locale, chunked = true, onStart }: PlayOptions = {}) {
-  // accent defaults to the learner's current choice (setVoiceOptions)
+export async function play(id: string, text: string, opts: PlayOptions = {}) {
+  const language = opts.language ?? 'en'
+  const rate = opts.rate ?? 1
+  const chunked = opts.chunked !== false
+  const onStart = opts.onStart
+  // accent and voice default to the learner's current choice (setVoiceOptions)
+  const voiceIndex = opts.voiceIndex ?? voiceOpts.voiceIndex
+  let accent = opts.accent
+  let locale = opts.locale
   if (accent === undefined) ({ accent, locale } = voiceOpts)
   const accentKey = accent || 'default'
   stop()
