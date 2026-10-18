@@ -64,7 +64,22 @@ export default defineComponent({
     // split each sentence into text pieces and blanks (first occurrence of each blank word)
     const sentences = computed(() => {
       let n = 0
-      return (props.content.sentences || []).map((s, i) => {
+      const raw = props.content.sentences || []
+      const merged: { text: string; blanks?: string[] }[] = []
+      const titleEnd = /(?:Mr|Mrs|Ms|Dr|Prof|St|Sr|Jr)\.\s*$/i
+      for (const s of raw) {
+        const text = (s.text || '').trim()
+        if (!text) continue
+        if (merged.length && titleEnd.test(merged[merged.length - 1].text)) {
+          const prev = merged[merged.length - 1]
+          const blanks = [...(prev.blanks || [])]
+          for (const b of s.blanks || []) if (b && !blanks.includes(b)) blanks.push(b)
+          merged[merged.length - 1] = { text: `${prev.text} ${text}`.trim(), blanks }
+        } else {
+          merged.push({ text, blanks: [...(s.blanks || [])] })
+        }
+      }
+      return merged.map((s, i) => {
         const spots = (s.blanks || [])
           .map((b, j) => ({ b, j, at: s.text.indexOf(b) }))
           .filter((x) => x.at >= 0)

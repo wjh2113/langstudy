@@ -30,4 +30,11 @@ const chatParts = splitSentences(chat)
 assert.ok(chatParts.length >= 2, chatParts.join(' | '))
 assert.ok(chatParts[0].length <= 60, chatParts[0])
 
+// A long line with "Mr. Stein." must not leave a lone "." chunk (that aborted full-article play).
+const nicole = "Nicole says, 'I'd like to make an appointment with Mr. Stein. We talked a week ago about the possibility of a business partnership and he told me to call and make an appointment for this week.'"
+const nicoleParts = splitSentences(nicole)
+assert.ok(nicoleParts.every((p) => /[A-Za-z]/.test(p)), nicoleParts.join(' | '))
+assert.ok(!nicoleParts.some((p) => /^[.\s]+$/.test(p)), nicoleParts.join(' | '))
+assert.ok(nicoleParts.some((p) => /Mr\.\s*Stein/.test(p)), nicoleParts.join(' | '))
+
 console.log('ok splitSentences')

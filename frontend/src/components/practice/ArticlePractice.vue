@@ -97,7 +97,22 @@ export default defineComponent({
   setup(props, { emit }) {
     const revealed = useRevealed()
     const openId = ref<string | null>(null)
-    const sentences = computed(() => (props.content.sentences || []).map((s, i) => ({ ...s, id: `s${i}`, n: i + 1 })))
+    // Rejoin "Mr." / "Dr." fragments so an old pack that split on the title dot still plays as one line.
+    const sentences = computed(() => {
+      const raw = props.content.sentences || []
+      const merged: { text: string }[] = []
+      const titleEnd = /(?:Mr|Mrs|Ms|Dr|Prof|St|Sr|Jr)\.\s*$/i
+      for (const s of raw) {
+        const text = (s.text || '').trim()
+        if (!text) continue
+        if (merged.length && titleEnd.test(merged[merged.length - 1].text)) {
+          merged[merged.length - 1] = { text: `${merged[merged.length - 1].text} ${text}`.trim() }
+        } else {
+          merged.push({ text })
+        }
+      }
+      return merged.map((s, i) => ({ ...s, id: `s${i}`, n: i + 1 }))
+    })
     const questions = computed(() => props.content.questions || [])
     const playingArticle = computed(() => Boolean(playingId.value?.startsWith('s')))
     const turnOf = (id: string) => props.turns.find((t) => t.id === id)

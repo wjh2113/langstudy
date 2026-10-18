@@ -1,11 +1,15 @@
 """Generate practice material for a topic: article / dialogue / questions /
 free chat setup / dictation (cloze). Optionally focused on a weak skill."""
 import random
+import re
 
 from . import config, demo
 from .languages import get_language, MODES
 from .ai import chat_json
 from .llm import LLMError
+
+# Model output sometimes splits "Mr. Stein" into two sentences at the title dot.
+_TITLE_END = re.compile(r"(?:Mr|Mrs|Ms|Dr|Prof|St|Sr|Jr)\.\s*$", re.I)
 
 SYSTEM = (
     "你是一名经验丰富的外语口语与听力教练，为中文母语的学习者编写练习材料。"
@@ -19,7 +23,7 @@ SCHEMAS = {
   "sentences": [{"text": "目标语言的一句话"}],
   "questions": [{"text": "关于这篇短文的听力理解问题（目标语言）", "answerHint": "参考答案要点（目标语言，简短）"}]
 }
-要求：短文 %(sentences)s 句，连贯成文，逐句拆分到 sentences；questions 共 %(count)s 个，需要听懂短文才能回答，鼓励用完整句子口头作答。""",
+要求：短文 %(sentences)s 句，连贯成文，逐句拆分到 sentences（Mr./Mrs./Dr. 等称谓后的点不要当成句号拆开）；questions 共 %(count)s 个，需要听懂短文才能回答，鼓励用完整句子口头作答。""",
     "dialogue": """{
   "title": "目标语言标题",
   "scene": "用中文描述场景（1-2 句）",
@@ -87,16 +91,37 @@ def _str(v) -> str:
     return str(v or "").strip()
 
 
+def _merge_title_breaks(sentences: list[dict]) -> list[dict]:
+    """Join a fragment that ends with Mr./Dr. back onto the next sentence."""
+    out: list[dict] = []
+    for s in sentences:
+        text = _str(s.get("text"))
+        if not text:
+            continue
+        if out and _TITLE_END.search(out[-1]["text"]):
+            prev = out[-1]
+            out[-1] = {**prev, "text": f"{prev['text'].rstrip()} {text.lstrip()}".strip()}
+            if "blanks" in prev or "blanks" in s:
+                blanks = list(prev.get("blanks") or [])
+                for b in s.get("blanks") or []:
+                    if b and b not in blanks:
+                        blanks.append(b)
+                out[-1]["blanks"] = blanks
+        else:
+            out.append(dict(s, text=text))
+    return out
+
+
 def normalize(mode: str, data: dict) -> dict:
     """Validate and clean model output so the frontend can rely on the shape.
     Translations are not part of the material; they are fetched on demand (see translate.py)."""
     out = {"mode": mode, "title": _str(data.get("title")) or "Practice"}
     if mode == "article":
-        out["sentences"] = [
+        out["sentences"] = _merge_title_breaks([
             {"text": _str(s.get("text"))}
             for s in data.get("sentences") or []
             if isinstance(s, dict) and _str(s.get("text"))
-        ]
+        ])
         out["questions"] = [
             {"text": _str(q.get("text")), "answerHint": _str(q.get("answerHint"))}
             for q in data.get("questions") or []
@@ -150,7 +175,7 @@ def normalize(mode: str, data: dict) -> dict:
             sentences.append({"text": text, "blanks": blanks[:2]})
         if not any(s["blanks"] for s in sentences):
             raise LLMError("生成的填空内容不完整，请重试")
-        out["sentences"] = sentences
+        out["sentences"] = _merge_title_breaks(sentences)
     elif mode == "questions":
         out["intro"] = _str(data.get("intro"))
         out["questions"] = [

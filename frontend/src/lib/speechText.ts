@@ -5,6 +5,7 @@
  */
 
 const ABBREV = /^(?:Mr|Mrs|Ms|Dr|Prof|St|Sr|Jr|vs|etc|e\.g|i\.e|U\.S|U\.K)\.?$/i
+const ONLY_PUNCT = /^[。．.!！？?；;、，,\s'’"”]+$/
 
 export function splitSentences(text: string, max = 120, firstMax = 60): string[] {
   const t = String(text || '').replace(/\s+/g, ' ').trim()
@@ -13,31 +14,61 @@ export function splitSentences(text: string, max = 120, firstMax = 60): string[]
   const out: string[] = []
   let cur = ''
   const limit = () => (out.length === 0 ? firstMax : max)
+
+  const push = (s: string) => {
+    const piece = s.trim()
+    if (!piece) return
+    // Never leave a lone "." / "!" chunk — it synthesizes as a blip and can abort playback.
+    if (ONLY_PUNCT.test(piece)) {
+      if (out.length) out[out.length - 1] = `${out[out.length - 1]}${piece}`.trim()
+      else cur = `${cur}${piece}`
+      return
+    }
+    out.push(piece)
+  }
+
   for (const raw of parts) {
     let p = cur ? raw : raw.trimStart()
     while (p.length > limit()) {
       if (cur) {
-        out.push(cur.trim())
+        push(cur)
         cur = ''
         p = p.trimStart()
         continue
       }
       const lim = limit()
-      const cut = Math.max(p.lastIndexOf('，', lim), p.lastIndexOf(',', lim), p.lastIndexOf('、', lim))
-      const at = cut >= 12 ? cut + 1 : lim
-      out.push(p.slice(0, at).trim())
+      const comma = Math.max(p.lastIndexOf('，', lim), p.lastIndexOf(',', lim), p.lastIndexOf('、', lim))
+      let at = comma >= 12 ? comma + 1 : lim
+      // Hard cut: prefer the last space so we don't slice off a trailing "." into its own piece.
+      // Skip spaces after Mr./Dr. so "Mr. Stein" stays together.
+      if (comma < 12) {
+        let space = p.lastIndexOf(' ', lim)
+        while (space >= 12) {
+          const leftWord = p.slice(0, space).trim().split(/\s/).pop() || ''
+          if (!ABBREV.test(leftWord)) break
+          space = p.lastIndexOf(' ', space - 1)
+        }
+        if (space >= 12) at = space + 1
+      }
+      push(p.slice(0, at))
       p = p.slice(at).trimStart()
     }
     if (!p) continue
+    if (ONLY_PUNCT.test(p)) {
+      if (cur) cur += p
+      else if (out.length) out[out.length - 1] = `${out[out.length - 1]}${p}`.trim()
+      else cur = p
+      continue
+    }
     if (cur && (cur + p).length > limit()) {
-      out.push(cur.trim())
+      push(cur)
       cur = p.trimStart()
     } else {
       cur += p
     }
   }
-  if (cur.trim()) out.push(cur.trim())
-  return out.filter(Boolean)
+  if (cur.trim()) push(cur)
+  return out.filter((s) => /[\p{L}\p{N}]/u.test(s))
 }
 
 function splitMarks(t: string): string[] {

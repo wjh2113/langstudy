@@ -33,7 +33,14 @@ export function setVoiceOptions({ accent = 'default', locale = null, voiceIndex 
 export function stop() {
   current.token++
   if (current.audio) {
-    current.audio.pause()
+    const a = current.audio
+    // Clear end/error first; leave onpause so playUrl can resolve on interrupt
+    // (it only resolves pause when the token no longer matches).
+    a.onended = null
+    a.onerror = null
+    a.onplaying = null
+    try { a.pause() } catch { /* ignore */ }
+    a.onpause = null
     current.audio = null
   }
   if (window.speechSynthesis) window.speechSynthesis.cancel()
@@ -95,11 +102,29 @@ function playUrl(url: string, token: number, onStart?: () => void) {
     if (token !== current.token) return resolve()
     const audio = new Audio(url)
     current.audio = audio
+    let settled = false
+    const done = () => {
+      if (settled) return
+      settled = true
+      resolve()
+    }
     audio.onplaying = () => onStart?.()
-    audio.onended = () => resolve()
-    audio.onpause = () => resolve()
-    audio.onerror = () => reject(new Error('音频播放失败'))
-    audio.play().catch(reject)
+    audio.onended = () => done()
+    // Only treat pause as done when stop()/another play() bumped the token.
+    // Mobile browsers also pause while buffering; resolving then cuts the clip short.
+    audio.onpause = () => {
+      if (token !== current.token) done()
+    }
+    audio.onerror = () => {
+      if (settled) return
+      settled = true
+      reject(new Error('音频播放失败'))
+    }
+    audio.play().catch((err) => {
+      if (settled) return
+      settled = true
+      reject(err)
+    })
   })
 }
 
@@ -127,7 +152,7 @@ export async function play(id: string, text: string, opts: PlayOptions = {}) {
   if (accent === undefined) ({ accent, locale } = voiceOpts)
   const accentKey = accent || 'default'
   // Kick off the first chunk before stop() so a warm prefetch is not thrown away.
-  const parts = (chunked ? splitSentences(text) : [text.trim()]).filter(Boolean)
+  const parts = (chunked ? splitSentences(text) : [text.trim()]).filter((p) => /[\p{L}\p{N}]/u.test(p))
   const firstJob = serverTTS && parts[0]
     ? fetchAudio(parts[0], language, voiceIndex, rate, accentKey)
     : null
