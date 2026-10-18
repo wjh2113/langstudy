@@ -73,8 +73,103 @@
       </div>
     </div>
 
-    <div v-if="groups.length" class="topics-list">
-      <section v-for="g in groups" :key="g.key" :class="['topics-acc', 'card', 'card--flush', { open: isOpen(g) }]">
+    <!-- PC: tree table -->
+    <section v-if="groups.length" class="card card--flush desktop-only">
+      <div class="table-wrap">
+        <table class="table topics-table topics-table--tree">
+          <thead>
+            <tr>
+              <th class="topics-table__fold" />
+              <th><AppIcon name="chat" :size="16" /> 话题</th>
+              <th><AppIcon name="globe" :size="16" /> 语言</th>
+              <th><AppIcon name="bars" :size="16" /> 级别</th>
+              <th><AppIcon name="doc" :size="16" /> 形式</th>
+              <th>状态</th>
+              <th><AppIcon name="clock" :size="16" /> 最近</th>
+              <th><AppIcon name="list" :size="16" /> 次数</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            <template v-for="g in groups" :key="g.key">
+              <tr class="topics-table__parent" :class="{ open: isOpen(g) }" @click="toggleGroup(g)">
+                <td class="topics-table__fold">
+                  <AppIcon :name="isOpen(g) ? 'chevron-down' : 'chevron-right'" :size="18" />
+                </td>
+                <td class="topics-table__topic">
+                  <strong>{{ g.topic }}</strong>
+                  <span class="muted">{{ g.items.length }} 种</span>
+                </td>
+                <td colspan="4" class="muted topics-table__summary">{{ g.summary }}</td>
+                <td class="nowrap">{{ dateTime(g.latest) }}</td>
+                <td>{{ g.attempts }}</td>
+                <td />
+              </tr>
+              <tr
+                v-for="t in g.items"
+                v-show="isOpen(g)"
+                :key="t.id"
+                class="topics-table__child"
+              >
+                <td class="topics-table__fold" />
+                <td class="topics-table__child-topic muted">{{ displayTitle(t, g.topic) }}</td>
+                <td><span :class="['tag', `tag--${t.language}`]">{{ LANG_NAMES[t.language || 'en'] }}</span></td>
+                <td>{{ LEVEL_NAMES[t.level || ''] || t.level || '—' }}</td>
+                <td><span class="tag tag--mode">{{ MODE_NAMES[t.mode] || t.mode }}</span></td>
+                <td>
+                  <span v-if="!t.done && (t.answered || 0) > 0" class="tag tag--warn tag--sm">未完成 · 已答 {{ t.answered }}</span>
+                  <span v-else-if="!t.done" class="tag tag--sm">未开始</span>
+                  <span v-else-if="t.overall != null" :class="['score-text', scoreBand(t.overall)]">{{ t.overall }} 分</span>
+                  <span v-else class="tag tag--sm">已完成</span>
+                </td>
+                <td class="nowrap">{{ dateTime(t.updatedAt || t.createdAt) }}</td>
+                <td>{{ t.attempts }}</td>
+                <td class="topics-table__actions" @click.stop>
+                  <button
+                    v-if="!t.done"
+                    type="button"
+                    class="icon-btn icon-btn--primary"
+                    :disabled="!!busy"
+                    :title="(t.answered || 0) > 0 ? '继续' : '开始'"
+                    :aria-label="(t.answered || 0) > 0 ? '继续' : '开始'"
+                    @click="open(t)"
+                  ><AppIcon name="play" :size="16" /></button>
+                  <button
+                    v-else
+                    type="button"
+                    class="icon-btn"
+                    :disabled="!!busy"
+                    title="用上次的题"
+                    aria-label="用上次的题"
+                    @click="reuse(t)"
+                  ><AppIcon name="repeat" :size="16" /></button>
+                  <button
+                    type="button"
+                    class="icon-btn"
+                    :disabled="!!busy"
+                    title="重新生成"
+                    aria-label="重新生成"
+                    @click="regen(t)"
+                  ><AppIcon name="refresh" :size="16" /></button>
+                  <button
+                    type="button"
+                    class="icon-btn icon-btn--danger"
+                    :disabled="!!busy"
+                    title="删除"
+                    aria-label="删除"
+                    @click="remove(t)"
+                  ><AppIcon name="trash" :size="16" /></button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Phone: accordion cards -->
+    <div v-if="groups.length" class="topics-list mobile-only">
+      <section v-for="g in groups" :key="'m-' + g.key" :class="['topics-acc', 'card', 'card--flush', { open: isOpen(g) }]">
         <button type="button" class="topics-acc__head" @click="toggleGroup(g)">
           <AppIcon :name="isOpen(g) ? 'chevron-down' : 'chevron-right'" :size="18" class="topics-acc__chev" />
           <div class="topics-acc__title">
@@ -85,7 +180,7 @@
           <span class="topics-acc__when muted">{{ dateTime(g.latest) }}</span>
         </button>
         <div v-show="isOpen(g)" class="topics-acc__body">
-          <article v-for="t in g.items" :key="t.id" class="topics-acc__item">
+          <article v-for="t in g.items" :key="'m-' + t.id" class="topics-acc__item">
             <div class="topics-acc__tags">
               <span :class="['tag', `tag--${t.language}`]">{{ t.language === 'ja' ? '日语' : '英语' }}</span>
               <span class="tag tag--sm">{{ LEVEL_NAMES[t.level || ''] || t.level || '—' }}</span>
@@ -320,7 +415,7 @@ export default defineComponent({
       return [...map.entries()].map(([topic, list]) => {
         const items = list.slice().sort(compareTopicRows)
         const modes = [...new Set(items.map((i) => MODE_NAMES[i.mode as Mode] || i.mode).filter(Boolean))]
-        const langs = [...new Set(items.map((i) => (i.language === 'ja' ? '日语' : '英语')))]
+        const langs = [...new Set(items.map((i) => LANG_NAMES[i.language || 'en'] || i.language))]
         const levels = [...new Set(items.map((i) => LEVEL_NAMES[i.level || ''] || i.level).filter(Boolean))]
         const latest = items.reduce((best, i) => {
           const t = i.updatedAt || i.createdAt || ''

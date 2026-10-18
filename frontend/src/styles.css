@@ -545,7 +545,16 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
 .resume__option:hover, .resume__option.on { background: var(--primary-soft); }
 .resume__option:disabled { opacity: .7; cursor: wait; }
 .resume__empty { padding: 16px 12px; text-align: center; }
+.topics-table__topic { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.topics-table__topic strong { font-weight: 650; }
 .topics-table__actions { display: flex; flex-wrap: nowrap; gap: 4px; justify-content: flex-end; white-space: nowrap; }
+.topics-table__fold { width: 36px; text-align: center; color: var(--text-3); }
+.topics-table__parent { cursor: pointer; }
+.topics-table__parent:hover { background: var(--surface-2); }
+.topics-table__parent.open td { border-bottom-color: transparent; }
+.topics-table__summary { font-size: 13px; }
+.topics-table__child td { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+.topics-table__child-topic { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topics-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .topics-toolbar .input { flex: 1; min-width: 180px; height: 50px; }
 .topics-toolbar__meta { display: flex; align-items: center; gap: 8px; margin: 0; white-space: nowrap; }
@@ -563,6 +572,7 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
   flex: 0 0 36px; margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--text-3);
 }
 .topics-filters .chips { flex: 1; }
+/* Phone-only list layouts (hidden on PC via .mobile-only) */
 .topics-list { display: grid; gap: 10px; }
 .topics-acc { overflow: hidden; }
 .topics-acc__head {
@@ -591,6 +601,7 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
 .topics-acc__tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .topics-acc__subtitle { margin: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topics-acc__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.mobile-only { display: none !important; }
 .topic-create { display: grid; gap: 14px; }
 .topic-create .field span { font-size: 13px; color: var(--text-2); }
 .topic-create input, .topic-create select {
@@ -1037,6 +1048,9 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
 .legend__item i::after { content: ""; position: absolute; left: 7px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: inherit; }
 .legend__item--en i { background: var(--en); }
 .legend__item--ja i { background: var(--ja); }
+.history-table td { font-size: 15px; padding: 16px 20px; }
+.history-table th { padding: 16px 20px; background: transparent; border-bottom: 1px solid var(--border); }
+.history-table__topic .muted { display: block; font-size: 12px; }
 .history-list { display: grid; gap: 10px; }
 .history-card { padding: 14px 16px; cursor: pointer; }
 .history-card:hover { background: var(--surface-2); }
@@ -1047,7 +1061,6 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
 .history-card__title { margin: 4px 0 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-card__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
 .history-card__actions { display: flex; gap: 4px; }
-.chips--scroll { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
 
 /* ---------------------------------------------------------- review/quiz */
 .flash { display: grid; gap: 14px; justify-items: start; max-width: 760px; }
@@ -1234,6 +1247,10 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
   .page-head { align-items: flex-start; gap: 10px; }
   .page-head__actions { width: 100%; }
   .page-head__actions .btn { flex: 1; justify-content: center; }
+
+  /* Swap PC tables ↔ phone cards without changing desktop rules above */
+  .desktop-only { display: none !important; }
+  .mobile-only { display: grid !important; }
 
   /* Topics: stack toolbar + filters for phone */
   .topics-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }

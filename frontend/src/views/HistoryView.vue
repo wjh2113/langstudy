@@ -7,7 +7,7 @@
         <span>显示所有用户的记录</span>
       </label>
     </header>
-    <div class="chips chips--scroll">
+    <div class="chips">
       <button v-for="f in filters" :key="f.key" type="button" :class="['chip', { on: filter === f.key }]" @click="filter = f.key">{{ f.label }}</button>
     </div>
 
@@ -27,10 +27,47 @@
       <p>还没有练习记录。回到首页，输入一个话题开始吧。</p>
       <RouterLink to="/" class="btn btn--primary">开始练习</RouterLink>
     </div>
-    <div v-if="shown.length" class="history-list">
+
+    <!-- PC: table -->
+    <section v-if="shown.length" class="card card--flush desktop-only">
+      <div class="table-wrap">
+        <table class="table history-table">
+          <thead>
+            <tr>
+              <th><AppIcon name="clock" :size="16" /> 时间</th>
+              <th v-if="showAll"><AppIcon name="user" :size="16" /> 用户</th>
+              <th><AppIcon name="globe" :size="16" /> 语言</th>
+              <th><AppIcon name="doc" :size="16" /> 形式</th>
+              <th><AppIcon name="chat" :size="16" /> 话题</th>
+              <th><AppIcon name="star" :size="16" /> 得分</th>
+              <th><AppIcon name="note" :size="16" /> 笔记</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="s in shown" :key="s.id" class="clickable" @click="open(s)">
+              <td class="nowrap">{{ dateTime(s.createdAt) }}</td>
+              <td v-if="showAll">{{ s.username || '—' }}</td>
+              <td><span :class="['tag', `tag--${s.language}`]">{{ LANG_NAMES[s.language || 'en'] }}</span></td>
+              <td><span :class="['tag', 'tag--mode', `tag--mode-${s.mode}`]">{{ MODE_NAMES[s.mode] }}</span></td>
+              <td class="history-table__topic">{{ s.topic }}<span class="muted">{{ s.title }}</span></td>
+              <td>
+                <strong v-if="s.done" :class="['score-text', scoreBand(s.overall)]">{{ s.overall ?? '—' }}</strong>
+                <span v-else class="tag tag--warn">未完成 · 已答 {{ s.answered }}</span>
+              </td>
+              <td><RouterLink v-if="s.hasNotes" :to="`/notes/${s.id}`" class="icon-link" title="查看笔记" @click.stop><AppIcon name="note" /></RouterLink><span v-else class="muted">—</span></td>
+              <td><button type="button" class="icon-btn icon-btn--danger" title="删除" aria-label="删除" @click.stop="remove(s)"><AppIcon name="trash" :size="16" /></button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Phone: cards -->
+    <div v-if="shown.length" class="history-list mobile-only">
       <article
         v-for="s in shown"
-        :key="s.id"
+        :key="'m-' + s.id"
         class="history-card card card--flush clickable"
         role="button"
         tabindex="0"
@@ -72,7 +109,7 @@ import ToggleSwitch from '../components/ui/ToggleSwitch.vue'
 import TrendChart, { type TrendSeries } from '../components/ui/TrendChart.vue'
 import { api, type SessionSummary } from '../api'
 import { isAdmin } from '../store'
-import { MODE_NAMES, dateTime, scoreBand } from '../lib/format'
+import { LANG_NAMES, MODE_NAMES, dateTime, scoreBand } from '../lib/format'
 
 export default defineComponent({
   name: 'HistoryView',
@@ -105,7 +142,7 @@ export default defineComponent({
     }
 
     return {
-      isAdmin, showAll, items, error, filter, shown, series, hasTrend, load, open, remove, dateTime, scoreBand, MODE_NAMES,
+      isAdmin, showAll, items, error, filter, shown, series, hasTrend, load, open, remove, dateTime, scoreBand, LANG_NAMES, MODE_NAMES,
       filters: [{ key: 'all', label: '全部' }, { key: 'en', label: '英语' }, { key: 'ja', label: '日语' }],
     }
   },
