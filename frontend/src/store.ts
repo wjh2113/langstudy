@@ -31,7 +31,15 @@ export type Theme = 'system' | 'light' | 'dark'
 export type Palette = 'blue' | 'coral' | 'amber'
 
 const DEFAULT_PREFS: Prefs = { language: 'en', level: 'intermediate', mode: 'questions', count: 5, topic: '', autoLevel: false }
-const DEFAULT_DISPLAY: Display = { rate: 1, voice: 'female', hideText: false, showTranslation: false, handsFree: false, accents: {} }
+const DEFAULT_DISPLAY: Display = {
+  rate: 1, voice: 'female', hideText: false, showTranslation: false, handsFree: false,
+  accents: { en: 'gb' },
+}
+
+/** English defaults to British (gb); other languages keep their “default” voice. */
+export function accentKeyFor(lang: Lang): string {
+  return store.display.accents?.[lang] || (lang === 'en' ? 'gb' : 'default')
+}
 const PALETTES: Palette[] = ['blue', 'coral', 'amber']
 
 export const store = reactive({
@@ -95,8 +103,8 @@ export const PALETTE_OPTIONS: { value: Palette; label: string; swatch: string }[
 export function envFor(lang: Lang): Env {
   const meta = store.config?.languages.find((l) => l.code === lang)
   const accents = meta?.accents || []
-  const accentKey = store.display.accents?.[lang] || 'default'
-  const accent = accents.find((a) => a.key === accentKey) || accents[0]
+  const accentKey = accentKeyFor(lang)
+  const accent = accents.find((a) => a.key === accentKey) || accents.find((a) => a.key === 'gb') || accents[0]
   const voice = store.display.voice === 'male' ? 'male' : 'female'
   return {
     rate: store.display.rate,

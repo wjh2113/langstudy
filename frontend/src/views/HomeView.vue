@@ -204,7 +204,7 @@ import UploadMaterialsDialog from '../components/UploadMaterialsDialog.vue'
 import { api, type SessionSummary } from '../api'
 import type { Accent, Coach, Level, Mode } from '../api/models'
 import type { PreviousSession } from '../api/types.gen'
-import { setAccent, setPrefs, store } from '../store'
+import { accentKeyFor, setAccent, setPrefs, store } from '../store'
 import { LANG_NAMES, LEVEL_NAMES, MODE_NAMES, dateTime } from '../lib/format'
 
 const OptHead = (props: { icon: string; title: string; sub: string }) => h('div', { class: 'opt__head' }, [
@@ -247,8 +247,11 @@ export default defineComponent({
     const levelOptions = computed(() => (meta.value?.levels || []).map((l) => ({ value: l.key, label: LEVEL_NAMES[l.key], title: l.label })))
     const accents = computed<Accent[]>(() => meta.value?.accents || [])
     const regions = computed(() => groupAccents(accents.value))
-    const accentKey = computed(() => store.display.accents[prefs.language] || 'default')
-    const currentAccent = computed(() => accents.value.find((a) => a.key === accentKey.value) || accents.value[0])
+    const accentKey = computed(() => accentKeyFor(prefs.language))
+    const currentAccent = computed(() =>
+      accents.value.find((a) => a.key === accentKey.value)
+      || accents.value.find((a) => a.key === 'gb')
+      || accents.value[0])
     const currentRegion = computed(() => currentAccent.value?.group ?? '')
     const regionAccents = computed(() => regions.value.find((r) => r.name === currentRegion.value)?.items || [])
     const pickRegion = (r: { name: string; items: Accent[] }) => {
