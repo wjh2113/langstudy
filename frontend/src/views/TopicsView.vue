@@ -237,7 +237,22 @@ const LEVELS = [
   { key: 'advanced', label: '高级' },
 ]
 
+const LANG_ORDER = ['en', 'ja']
+const LEVEL_ORDER = LEVELS.map((l) => l.key)
+const MODE_ORDER = MODES.map((m) => m.key)
 const MODE_LABELS = Object.values(MODE_NAMES)
+
+function rank(list: string[], key: string | null | undefined) {
+  const i = list.indexOf(key || '')
+  return i < 0 ? list.length : i
+}
+
+function compareTopicRows(a: TopicItem, b: TopicItem) {
+  return rank(LANG_ORDER, a.language) - rank(LANG_ORDER, b.language)
+    || rank(LEVEL_ORDER, a.level) - rank(LEVEL_ORDER, b.level)
+    || rank(MODE_ORDER, a.mode) - rank(MODE_ORDER, b.mode)
+    || String(a.topic || '').localeCompare(String(b.topic || ''), 'zh')
+}
 
 type StatusFilter = '' | 'todo' | 'progress' | 'done'
 
@@ -329,17 +344,20 @@ export default defineComponent({
         map.set(key, list)
       }
       return [...map.entries()].map(([topic, list]) => {
-        const items = list.slice().sort((a, b) =>
-          String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))
+        const items = list.slice().sort(compareTopicRows)
         const modes = [...new Set(items.map((i) => MODE_NAMES[i.mode as Mode] || i.mode).filter(Boolean))]
         const langs = [...new Set(items.map((i) => LANG_NAMES[i.language || 'en'] || i.language))]
         const levels = [...new Set(items.map((i) => LEVEL_NAMES[i.level || ''] || i.level).filter(Boolean))]
+        const latest = items.reduce((best, i) => {
+          const t = i.updatedAt || i.createdAt || ''
+          return t > best ? t : best
+        }, '')
         return {
           key: topic,
           topic,
           items,
           summary: [langs.join('/'), levels.join('/'), modes.join(' · ')].filter(Boolean).join(' · '),
-          latest: items[0]?.updatedAt || items[0]?.createdAt || '',
+          latest,
           attempts: items.reduce((n, i) => n + (i.attempts || 0), 0),
         }
       }).sort((a, b) => String(b.latest).localeCompare(String(a.latest)))
