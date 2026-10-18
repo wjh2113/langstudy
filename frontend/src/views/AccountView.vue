@@ -9,7 +9,26 @@
 
     <section class="card">
       <h2 class="card__title">外观</h2>
-      <SegControl :options="themes" :model-value="store.theme" label="主题" @update:model-value="(v) => setTheme(v)" />
+      <SegControl :options="themes" :model-value="store.theme" label="主题" @update:model-value="(v) => setTheme(v as any)" />
+      <div class="palette-picker" role="radiogroup" aria-label="主题色系">
+        <p class="palette-picker__label">主题色系</p>
+        <div class="palette-picker__row">
+          <button
+            v-for="p in palettes"
+            :key="p.value"
+            type="button"
+            role="radio"
+            :aria-checked="store.palette === p.value"
+            :class="['palette-swatch', { on: store.palette === p.value }]"
+            :title="p.label"
+            :aria-label="p.label"
+            @click="setPalette(p.value)"
+          >
+            <span class="palette-swatch__dot" :style="{ background: p.swatch }" />
+            <span>{{ p.label }}</span>
+          </button>
+        </div>
+      </div>
     </section>
 
     <section class="card">
@@ -33,7 +52,7 @@ import { useRouter } from 'vue-router'
 import AppIcon from '../components/ui/AppIcon.vue'
 import SegControl from '../components/ui/SegControl.vue'
 import { api } from '../api'
-import { logout, setTheme, store } from '../store'
+import { logout, PALETTE_OPTIONS, setPalette, setTheme, store } from '../store'
 
 export default defineComponent({
   name: 'AccountView',
@@ -65,8 +84,9 @@ export default defineComponent({
     }
 
     return {
-      me: store.user, store, oldPassword, newPassword, error, busy, save, signOut, setTheme,
+      me: store.user, store, oldPassword, newPassword, error, busy, save, signOut, setTheme, setPalette,
       themes: [{ value: 'system', label: '跟随系统' }, { value: 'light', label: '浅色' }, { value: 'dark', label: '深色' }],
+      palettes: PALETTE_OPTIONS,
     }
   },
 })

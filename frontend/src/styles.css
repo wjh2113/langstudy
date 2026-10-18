@@ -77,6 +77,28 @@
   color-scheme: dark;
 }
 
+/* Brand palettes (warm coral / amber on top of the default indigo). */
+:root[data-palette="coral"] {
+  --primary: #E8724A; --primary-hover: #D45E38; --primary-soft: #FDF1EC; --primary-soft-2: #FADFD4;
+}
+:root[data-palette="amber"] {
+  --primary: #D97706; --primary-hover: #B45309; --primary-soft: #FEF6E8; --primary-soft-2: #FCE8C5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])[data-palette="coral"] {
+    --primary: #F08A68; --primary-hover: #F5A286; --primary-soft: #3A2822; --primary-soft-2: #4A322A;
+  }
+  :root:not([data-theme="light"])[data-palette="amber"] {
+    --primary: #F0A12A; --primary-hover: #F5B44F; --primary-soft: #3A2F1A; --primary-soft-2: #4A3A1E;
+  }
+}
+:root[data-theme="dark"][data-palette="coral"] {
+  --primary: #F08A68; --primary-hover: #F5A286; --primary-soft: #3A2822; --primary-soft-2: #4A322A;
+}
+:root[data-theme="dark"][data-palette="amber"] {
+  --primary: #F0A12A; --primary-hover: #F5B44F; --primary-soft: #3A2F1A; --primary-soft-2: #4A3A1E;
+}
+
 /* ------------------------------------------------------------------ base */
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -258,6 +280,17 @@ audio { height: 32px; max-width: 260px; }
 .empty { display: grid; justify-items: center; gap: 14px; padding: 48px 24px; text-align: center; color: var(--text-2); }
 .empty .icon { color: var(--text-3); }
 .empty__actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.palette-picker { display: grid; gap: 10px; margin-top: 18px; }
+.palette-picker__label { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.palette-picker__row { display: flex; flex-wrap: wrap; gap: 10px; }
+.palette-swatch {
+  display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px 0 10px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text);
+  font-size: 14px;
+}
+.palette-swatch:hover { border-color: var(--border-strong); }
+.palette-swatch.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+.palette-swatch__dot { width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); flex: none; }
 .chips { display: flex; flex-wrap: wrap; gap: 10px; }
 .chips--center { justify-content: center; }
 .chip {

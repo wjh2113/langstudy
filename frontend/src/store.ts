@@ -27,9 +27,12 @@ export interface Display {
   accents: Partial<Record<Lang, string>>
 }
 export type Theme = 'system' | 'light' | 'dark'
+/** Brand accent: blue is the default; coral and amber are warmer alternatives. */
+export type Palette = 'blue' | 'coral' | 'amber'
 
 const DEFAULT_PREFS: Prefs = { language: 'en', level: 'intermediate', mode: 'questions', count: 5, topic: '', autoLevel: false }
 const DEFAULT_DISPLAY: Display = { rate: 1, voice: 'female', hideText: false, showTranslation: false, handsFree: false, accents: {} }
+const PALETTES: Palette[] = ['blue', 'coral', 'amber']
 
 export const store = reactive({
   auth: 'loading' as 'loading' | 'setup' | 'login' | 'register' | 'in',
@@ -39,6 +42,10 @@ export const store = reactive({
   prefs: load<Prefs>('ls.prefs', DEFAULT_PREFS),
   display: load<Display>('ls.display', DEFAULT_DISPLAY),
   theme: ((read('ls.theme') as Theme) || 'system') as Theme,
+  palette: (() => {
+    const saved = read('ls.palette') as Palette
+    return PALETTES.includes(saved) ? saved : 'blue'
+  })(),
   /** language of the page being shown (a practice/report sets it to its own) */
   pageLanguage: null as Lang | null,
 })
@@ -63,15 +70,26 @@ export function setTheme(theme: Theme) {
   store.theme = theme
   save('ls.theme', theme)
 }
+export function setPalette(palette: Palette) {
+  store.palette = palette
+  save('ls.palette', palette)
+}
 watchEffect(() => {
   const el = document.documentElement
   if (store.theme === 'system') delete el.dataset.theme
   else el.dataset.theme = store.theme
+  if (store.palette === 'blue') delete el.dataset.palette
+  else el.dataset.palette = store.palette
 })
 export const effectiveTheme = computed<'light' | 'dark'>(() => {
   if (store.theme !== 'system') return store.theme
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 })
+export const PALETTE_OPTIONS: { value: Palette; label: string; swatch: string }[] = [
+  { value: 'blue', label: '靛蓝', swatch: '#4F6AF6' },
+  { value: 'coral', label: '珊瑚', swatch: '#E8724A' },
+  { value: 'amber', label: '琥珀', swatch: '#D97706' },
+]
 
 /** Everything components need to know about a target language and the listening settings. */
 export function envFor(lang: Lang): Env {
