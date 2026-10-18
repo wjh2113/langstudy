@@ -12,7 +12,7 @@ os.environ.setdefault("GATEWAY_API_KEY", "")
 os.environ.setdefault("LLM_API_KEY", "")
 
 from app import config, tts  # noqa: E402
-from app.tts_silence import KEEP_MS, has_internal_stop, shorten_silence, tighten_mp3  # noqa: E402
+from app.tts_silence import KEEP_MS, STOP_KEEP_MS, has_internal_stop, shorten_silence, tighten_mp3  # noqa: E402
 
 RATE = 16000
 
@@ -64,11 +64,13 @@ def test_long_pause_shrinks_to_a_breath():
     assert gap >= 60
 
 
-def test_pause_after_a_question_stays():
-    """A stop between two sentences is the breath after '?', not a mid-word stall."""
+def test_pause_after_a_question_keeps_a_short_breath():
+    """A stop between two sentences keeps a short breath, not a 0.5s CosyVoice stall."""
     samples = _tone(400) + _silence(500) + _tone(400) + _silence(240) + _tone(300)
     out = shorten_silence(samples, RATE, preserve_stops=True)
-    assert _longest_internal_silence_ms(out) >= 450
+    gap = _longest_internal_silence_ms(out)
+    assert gap <= STOP_KEEP_MS + 30
+    assert gap >= KEEP_MS
     assert has_internal_stop("What kind of dishes, and why? Describe one dish.")
     assert not has_internal_stop("Hi, can we get a table for two, please?")
 

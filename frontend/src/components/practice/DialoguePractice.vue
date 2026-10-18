@@ -112,8 +112,14 @@ export default defineComponent({
     const shown = computed(() => lines.value.slice(0, Math.min(st.idx + 1, lines.value.length)))
     const current = computed(() => lines.value[st.idx])
     const roleName = (id: string) => roles.value.find((r) => r.id === id)?.name || id
-    // Voice lists are [female, male]. Avatar A wears a tie, avatar B has long hair.
-    const voiceOf = (role: string) => (role === 'A' ? 1 : 0)
+    // Voice lists are [female, male]. The partner uses the learner's 音色; the
+    // other role gets the opposite so two speakers stay distinct.
+    const voiceOf = (role: string) => {
+      const preferred = props.env.voiceIndex === 1 ? 1 : 0
+      const other = preferred === 1 ? 0 : 1
+      if (!st.myRole) return role === 'A' ? preferred : other
+      return role === st.myRole ? other : preferred
+    }
     const turnOf = (id: string) => props.turns.find((t) => t.id === id)
     const turnsStarted = computed(() => props.turns.length > 0)
     const lastMine = computed(() => [...props.turns].reverse().find((t) => t.kind === 'line') || null)

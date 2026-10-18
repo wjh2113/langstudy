@@ -109,8 +109,9 @@ async def synthesize(text: str, language: str, voice_index: int = 0, rate: float
         voices, provider = get_language(language)["voices"], "edge"
     voice = voices[voice_index % len(voices)]
 
-    # gap360: mid-word gaps are shortened, but a pause after ? . ! is kept, so older clips are not reused.
-    gap = "|gap360" if provider == "gateway" else ""
+    # gap180: mid-word stalls collapse; a short breath after ? . ! stays.
+    # vcn2: 讯飞 alex/anna gender map was swapped; bust old wrong-gender clips.
+    gap = "|gap180|vcn2" if provider == "gateway" else ""
     key = hashlib.sha1(f"{provider}|{voice}|{rate:.2f}|{text}{gap}".encode()).hexdigest()
     path = config.TTS_CACHE_DIR / f"{key}.mp3"
     hit = _read_cached(path)

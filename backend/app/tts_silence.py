@@ -11,12 +11,13 @@ import math
 
 log = logging.getLogger(__name__)
 
-MAX_GAP_MS = 180
-KEEP_MS = 120
-# A hole this long, in a line that actually has a sentence break, is the pause
-# after that break — not the mid-word stall.
-STOP_MS = 360
-STOP_CAP_MS = 700
+MAX_GAP_MS = 140
+KEEP_MS = 80
+# CosyVoice often leaves 300–500 ms holes mid-phrase. When the text has an
+# internal ? . !, keep a short breath there — never the full hole (that sounded
+# like stuttering). Mid-word stalls still collapse to KEEP_MS.
+STOP_MS = 280
+STOP_KEEP_MS = 180
 SAMPLE_RATE = 16000
 
 
@@ -85,7 +86,7 @@ def shorten_silence(
     keep_frames = max(1, round(keep_ms / 10))
     max_frames = max(keep_frames, round(max_gap_ms / 10))
     stop_frames = max(max_frames, round(STOP_MS / 10))
-    cap_frames = max(stop_frames, round(STOP_CAP_MS / 10))
+    stop_keep_frames = max(keep_frames, round(STOP_KEEP_MS / 10))
     out = array.array("h")
     i = 0
     changed = False
@@ -100,7 +101,8 @@ def shorten_silence(
         run = j - i
         internal = i > 0 and j < len(silent)
         if preserve_stops and internal and run >= stop_frames:
-            take = min(run, cap_frames)
+            # Short breath after ? . ! — never leave a 0.5s CosyVoice stall.
+            take = min(run, stop_keep_frames)
         else:
             take = run if run <= max_frames else keep_frames
         if take < run:
