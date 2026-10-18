@@ -15,13 +15,18 @@
     <div class="topics-toolbar">
       <label class="input input--search"><AppIcon name="search" :size="18" />
         <input v-model="q" placeholder="搜索话题、标题…" aria-label="搜索话题" /></label>
+      <button type="button" class="btn btn--ghost btn--sm topics-filter-toggle" @click="filtersOpen = !filtersOpen">
+        <AppIcon :name="filtersOpen ? 'chevron-up' : 'chevron-down'" :size="16" />
+        筛选条件
+        <span v-if="filterSummary" class="topics-filter-toggle__sum">{{ filterSummary }}</span>
+      </button>
       <p class="topics-toolbar__meta muted">
-        显示 {{ flatShown.length }} / {{ items?.length || 0 }}
-        <button v-if="hasActiveFilters" type="button" class="btn btn--ghost btn--sm" @click="clearFilters">清除筛选</button>
+        {{ groups.length }} 个话题 · {{ flatShown.length }} 条
+        <button v-if="hasActiveFilters" type="button" class="btn btn--ghost btn--sm" @click="clearFilters">清除</button>
       </p>
     </div>
 
-    <div class="topics-filters">
+    <div v-show="filtersOpen" class="topics-filters">
       <div class="topics-filters__row">
         <span class="topics-filters__label">语言</span>
         <div class="chips">
@@ -68,28 +73,45 @@
       </div>
     </div>
 
-    <div v-if="groups.length" class="topics-groups">
-      <section v-for="g in groups" :key="g.key" class="card card--flush topics-group">
-        <button type="button" class="topics-group__head" @click="toggleGroup(g.key)">
-          <AppIcon :name="collapsed[g.key] ? 'chevron-right' : 'chevron-down'" :size="18" />
-          <strong>{{ g.topic }}</strong>
-          <span class="muted">{{ g.items.length }} 种</span>
-        </button>
-        <div v-show="!collapsed[g.key]" class="table-wrap">
-          <table class="table topics-table">
-            <thead>
-              <tr>
-                <th><AppIcon name="globe" :size="16" /> 语言</th>
-                <th><AppIcon name="bars" :size="16" /> 级别</th>
-                <th><AppIcon name="doc" :size="16" /> 形式</th>
-                <th>状态</th>
-                <th><AppIcon name="clock" :size="16" /> 最近</th>
-                <th><AppIcon name="list" :size="16" /> 次数</th>
-                <th />
+    <section v-if="groups.length" class="card card--flush">
+      <div class="table-wrap">
+        <table class="table topics-table topics-table--tree">
+          <thead>
+            <tr>
+              <th class="topics-table__fold" />
+              <th><AppIcon name="chat" :size="16" /> 话题</th>
+              <th><AppIcon name="globe" :size="16" /> 语言</th>
+              <th><AppIcon name="bars" :size="16" /> 级别</th>
+              <th><AppIcon name="doc" :size="16" /> 形式</th>
+              <th>状态</th>
+              <th><AppIcon name="clock" :size="16" /> 最近</th>
+              <th><AppIcon name="list" :size="16" /> 次数</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            <template v-for="g in groups" :key="g.key">
+              <tr class="topics-table__parent" :class="{ open: isOpen(g) }" @click="toggleGroup(g)">
+                <td class="topics-table__fold">
+                  <AppIcon :name="isOpen(g) ? 'chevron-down' : 'chevron-right'" :size="18" />
+                </td>
+                <td class="topics-table__topic">
+                  <strong>{{ g.topic }}</strong>
+                  <span class="muted">{{ g.items.length }} 种</span>
+                </td>
+                <td colspan="4" class="muted topics-table__summary">{{ g.summary }}</td>
+                <td class="nowrap">{{ dateTime(g.latest) }}</td>
+                <td>{{ g.attempts }}</td>
+                <td />
               </tr>
-            </thead>
-            <tbody>
-              <tr v-for="t in g.items" :key="t.id">
+              <tr
+                v-for="t in g.items"
+                v-show="isOpen(g)"
+                :key="t.id"
+                class="topics-table__child"
+              >
+                <td class="topics-table__fold" />
+                <td class="topics-table__child-topic muted">{{ displayTitle(t, g.topic) }}</td>
                 <td><span :class="['tag', `tag--${t.language}`]">{{ LANG_NAMES[t.language || 'en'] }}</span></td>
                 <td>{{ LEVEL_NAMES[t.level || ''] || t.level || '—' }}</td>
                 <td><span class="tag tag--mode">{{ MODE_NAMES[t.mode] || t.mode }}</span></td>
@@ -101,7 +123,7 @@
                 </td>
                 <td class="nowrap">{{ dateTime(t.updatedAt || t.createdAt) }}</td>
                 <td>{{ t.attempts }}</td>
-                <td class="topics-table__actions">
+                <td class="topics-table__actions" @click.stop>
                   <button v-if="!t.done" type="button" class="btn btn--sm btn--primary" :disabled="!!busy" @click="open(t)">
                     {{ (t.answered || 0) > 0 ? '继续' : '开始' }}
                   </button>
@@ -114,11 +136,11 @@
                   </button>
                 </td>
               </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
     <ModalDialog :open="creating" title="新增话题" icon="plus" @close="creating = false">
       <form class="topic-create" @submit.prevent="create">
@@ -191,12 +213,32 @@ const LEVELS = [
   { key: 'advanced', label: '高级' },
 ]
 
+const MODE_LABELS = Object.values(MODE_NAMES)
+
 type StatusFilter = '' | 'todo' | 'progress' | 'done'
 
 function topicStatus(t: TopicItem): StatusFilter {
   if (t.done) return 'done'
   if ((t.answered || 0) > 0) return 'progress'
   return 'todo'
+}
+
+/** Strip trailing " | 话题问答" so variants of the same topic group together. */
+function baseTopicName(raw: string): string {
+  let name = (raw || '').trim()
+  if (!name) return '未命名'
+  for (const label of MODE_LABELS) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    name = name.replace(new RegExp(`[\\s|｜/／·•\\-]+${escaped}\\s*$`), '').trim()
+  }
+  for (const m of MODES) {
+    name = name.replace(new RegExp(`[\\s|｜/／·•\\-]+${m.key}\\s*$`, 'i'), '').trim()
+  }
+  return name || '未命名'
+}
+
+function groupKeyOf(t: TopicItem): string {
+  return baseTopicName(t.topic || t.title || '')
 }
 
 export default defineComponent({
@@ -211,12 +253,13 @@ export default defineComponent({
     const level = ref('')
     const mode = ref('')
     const status = ref<StatusFilter>('')
+    const filtersOpen = ref(false)
     const busy = ref('')
     const busyLabel = ref('')
     const waited = ref(0)
     const creating = ref(false)
     const uploadOpen = ref(false)
-    const collapsed = reactive<Record<string, boolean>>({})
+    const expanded = reactive<Record<string, boolean>>({})
     const draft = reactive({
       topic: '',
       language: store.prefs.language as Lang,
@@ -227,7 +270,18 @@ export default defineComponent({
     const load = () => api.topics().then((r) => (items.value = r)).catch((e) => (error.value = e.message))
     onMounted(load)
 
-    const hasActiveFilters = computed(() => !!(q.value.trim() || lang.value || level.value || mode.value || status.value))
+    const hasActiveFilters = computed(() => !!(lang.value || level.value || mode.value || status.value || q.value.trim()))
+
+    const filterSummary = computed(() => {
+      const parts: string[] = []
+      if (lang.value) parts.push(LANG_NAMES[lang.value] || lang.value)
+      if (level.value) parts.push(LEVEL_NAMES[level.value] || level.value)
+      if (mode.value) parts.push(MODE_NAMES[mode.value as Mode] || mode.value)
+      if (status.value === 'todo') parts.push('未开始')
+      if (status.value === 'progress') parts.push('未完成')
+      if (status.value === 'done') parts.push('已完成')
+      return parts.join(' · ')
+    })
 
     const flatShown = computed(() => {
       const needle = q.value.trim().toLowerCase()
@@ -237,27 +291,34 @@ export default defineComponent({
         if (mode.value && t.mode !== mode.value) return false
         if (status.value && topicStatus(t) !== status.value) return false
         if (!needle) return true
-        return [t.topic, t.title].some((x) => (x || '').toLowerCase().includes(needle))
+        const base = groupKeyOf(t).toLowerCase()
+        return base.includes(needle) || [t.topic, t.title].some((x) => (x || '').toLowerCase().includes(needle))
       })
     })
 
     const groups = computed(() => {
       const map = new Map<string, TopicItem[]>()
       for (const t of flatShown.value) {
-        const key = (t.topic || t.title || '未命名').trim() || '未命名'
+        const key = groupKeyOf(t)
         const list = map.get(key) || []
         list.push(t)
         map.set(key, list)
       }
-      return [...map.entries()].map(([topic, list]) => ({
-        key: topic,
-        topic,
-        items: list.slice().sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt))),
-      })).sort((a, b) => {
-        const at = a.items[0]?.updatedAt || a.items[0]?.createdAt || ''
-        const bt = b.items[0]?.updatedAt || b.items[0]?.createdAt || ''
-        return String(bt).localeCompare(String(at))
-      })
+      return [...map.entries()].map(([topic, list]) => {
+        const items = list.slice().sort((a, b) =>
+          String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))
+        const modes = [...new Set(items.map((i) => MODE_NAMES[i.mode as Mode] || i.mode).filter(Boolean))]
+        const langs = [...new Set(items.map((i) => LANG_NAMES[i.language || 'en'] || i.language))]
+        const levels = [...new Set(items.map((i) => LEVEL_NAMES[i.level || ''] || i.level).filter(Boolean))]
+        return {
+          key: topic,
+          topic,
+          items,
+          summary: [langs.join('/'), levels.join('/'), modes.join(' · ')].filter(Boolean).join(' · '),
+          latest: items[0]?.updatedAt || items[0]?.createdAt || '',
+          attempts: items.reduce((n, i) => n + (i.attempts || 0), 0),
+        }
+      }).sort((a, b) => String(b.latest).localeCompare(String(a.latest)))
     })
 
     function clearFilters() {
@@ -268,8 +329,19 @@ export default defineComponent({
       status.value = ''
     }
 
-    function toggleGroup(key: string) {
-      collapsed[key] = !collapsed[key]
+    function isOpen(g: { key: string; items: TopicItem[] }) {
+      if (expanded[g.key] !== undefined) return expanded[g.key]
+      return g.items.length === 1
+    }
+
+    function toggleGroup(g: { key: string; items: TopicItem[] }) {
+      expanded[g.key] = !isOpen(g)
+    }
+
+    function displayTitle(t: TopicItem, groupTopic: string) {
+      const title = (t.title || '').trim()
+      if (!title || baseTopicName(title) === groupTopic) return ''
+      return title
     }
 
     function openCreate() {
@@ -386,7 +458,8 @@ export default defineComponent({
 
     return {
       items, error, q, lang, level, mode, status, levels: LEVELS, modes: MODES,
-      flatShown, groups, collapsed, hasActiveFilters, clearFilters, toggleGroup,
+      filtersOpen, filterSummary, flatShown, groups, expanded, hasActiveFilters,
+      clearFilters, isOpen, toggleGroup, displayTitle,
       busy, busyLabel, waited, creating, uploadOpen, draft,
       open, openCreate, openUpload, onUploadBusy, onImported, reuse, regen, remove, create,
       LANG_NAMES, LEVEL_NAMES, MODE_NAMES, dateTime, scoreBand,
