@@ -170,8 +170,11 @@ export async function play(id: string, text: string, opts: PlayOptions = {}) {
 
 /** Play several items in order; stops if another play/stop happens. */
 export async function playSequence(items: { id: string; text: string; voiceIndex?: number }[], opts: PlayOptions) {
-  for (const item of items) {
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
     const before = current.token
+    const next = items[i + 1]
+    if (next) prefetch(next.text, { ...opts, voiceIndex: next.voiceIndex ?? opts.voiceIndex })
     await play(item.id, item.text, { ...opts, voiceIndex: item.voiceIndex ?? opts.voiceIndex })
     // play() increments token once at its start; anything more means interrupted
     if (current.token !== before + 1) return

@@ -57,7 +57,7 @@ import PlayButton from '../components/ui/PlayButton.vue'
 import ScoreRing from '../components/ui/ScoreRing.vue'
 import ToggleSwitch from '../components/ui/ToggleSwitch.vue'
 import type { Accent } from '../api/models'
-import { play } from '../lib/audio'
+import { play, prefetch } from '../lib/audio'
 import { envFor, store } from '../store'
 
 const ROUNDS = 10
@@ -120,10 +120,12 @@ export default defineComponent({
 
     function playCurrent() {
       const cur = q.value
+      const opts = {
+        language: 'en' as const, rate: env.value.rate, accent: cur.answer.key, locale: cur.answer.locale,
+      }
+      prefetch(cur.sentence, opts)
       setTimeout(() => {
-        play(`quiz-${round.value}`, cur.sentence, {
-          language: 'en', rate: env.value.rate, accent: cur.answer.key, locale: cur.answer.locale,
-        }).catch(() => {})
+        play(`quiz-${round.value}`, cur.sentence, opts).catch(() => {})
       }, 300)
     }
 

@@ -70,7 +70,7 @@ import TargetText from '../ui/TargetText.vue'
 import ToggleSwitch from '../ui/ToggleSwitch.vue'
 import { api } from '../../api'
 import type { Content, Env, Turn } from '../../api/models'
-import { play, stop } from '../../lib/audio'
+import { play, prefetch, stop } from '../../lib/audio'
 import { SESSION_ID, useModeState, useRevealed } from '../../lib/practice'
 import { read, save as saveLocal } from '../../lib/storage'
 
@@ -122,9 +122,14 @@ export default defineComponent({
       const id = promptId.value
       const text = st.stage === 'follow' ? followUp.value?.text : question.value.text
       if (!text) return
+      const opts = {
+        language: props.env.language, rate: props.env.rate, voiceIndex: props.env.voiceIndex,
+        accent: props.env.accent || 'default', locale: props.env.accentLocale || null,
+      }
+      prefetch(text, opts)
       timer = setTimeout(() => {
         props.tracker.count(id)
-        play(id, text, { language: props.env.language, rate: props.env.rate })
+        play(id, text, opts)
           .catch(() => {})
           .finally(() => { if (promptId.value === id) listen.value++ }) // your turn
       }, 350)

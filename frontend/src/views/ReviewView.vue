@@ -111,7 +111,7 @@ import PlayButton from '../components/ui/PlayButton.vue'
 import SegControl from '../components/ui/SegControl.vue'
 import { api } from '../api'
 import type { Card, Diff, Lang } from '../api/models'
-import { play } from '../lib/audio'
+import { play, prefetch } from '../lib/audio'
 import { forget, refreshDue } from '../lib/cards'
 import { diffReference, tokensOf } from '../lib/diff'
 import { envFor, store } from '../store'
@@ -191,10 +191,19 @@ export default defineComponent({
       checking.value = false
       if (card.value && direction.value === 'listen') {
         const c = card.value
+        warmCard(c)
         setTimeout(() => { if (card.value === c && !revealed.value) playCard(c) }, 300)
       }
     }
-    const playCard = (c: Card) => play(`card-${c.id}`, c.front, { language: language.value, rate: cardEnv.value.rate }).catch(() => {})
+    function cardPlayOpts() {
+      const e = cardEnv.value
+      return {
+        language: language.value, rate: e.rate, voiceIndex: e.voiceIndex,
+        accent: e.accent || 'default', locale: e.accentLocale || null,
+      }
+    }
+    const warmCard = (c: Card) => prefetch(c.front, cardPlayOpts())
+    const playCard = (c: Card) => play(`card-${c.id}`, c.front, cardPlayOpts()).catch(() => {})
 
     // judged by comparing the text; pronunciation assessment is billed, so it only runs on request
     function checkSpoken(a: AnswerPayload) {
