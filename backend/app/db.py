@@ -394,6 +394,47 @@ def list_sessions(user_id=None, limit: int = 200):
     ]
 
 
+def _topic_key(r) -> tuple:
+    return (r["language"] or "", r["level"] or "", r["mode"] or "", (r["topic"] or "").strip().lower())
+
+
+def list_topics(user_id: int, limit: int = 200) -> list[dict]:
+    """One row per language/level/mode/topic, using the most recently touched session."""
+    with _conn() as c:
+        rows = c.execute(
+            """SELECT s.id, s.created_at, s.updated_at, s.language, s.level, s.mode, s.topic, s.title, s.overall,
+                      s.report IS NOT NULL AS done, s.notes IS NOT NULL AS has_notes,
+                      (SELECT COUNT(*) FROM turns t WHERE t.session_id=s.id) AS answered
+               FROM sessions s WHERE s.user_id=?
+               ORDER BY COALESCE(s.updated_at, s.created_at) DESC""",
+            (user_id,),
+        ).fetchall()
+    counts: dict[tuple, int] = {}
+    for r in rows:
+        if not (r["topic"] or "").strip():
+            continue
+        key = _topic_key(r)
+        counts[key] = counts.get(key, 0) + 1
+    out, seen = [], set()
+    for r in rows:
+        if not (r["topic"] or "").strip():
+            continue
+        key = _topic_key(r)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({
+            "id": r["id"], "language": r["language"], "level": r["level"], "mode": r["mode"],
+            "topic": r["topic"], "title": r["title"], "overall": r["overall"],
+            "createdAt": r["created_at"], "updatedAt": r["updated_at"],
+            "done": bool(r["done"]), "hasNotes": bool(r["has_notes"]), "answered": r["answered"],
+            "attempts": counts[key],
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
 def dimension_history(user_id: int, language: str, limit: int = 20):
     """Per-dimension scores of a user's recent finished sessions, oldest first (for trends)."""
     with _conn() as c:

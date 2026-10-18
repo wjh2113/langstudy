@@ -181,6 +181,23 @@ class SessionSummary(BaseModel):
     answered: int = 0
 
 
+class TopicSummary(BaseModel):
+    """Latest session for one language/level/mode/topic combination."""
+    id: str
+    language: Optional[str] = None
+    level: Optional[str] = None
+    mode: Optional[str] = None
+    topic: Optional[str] = None
+    title: Optional[str] = None
+    overall: Optional[int] = None
+    createdAt: str
+    updatedAt: Optional[str] = None
+    done: bool
+    hasNotes: bool
+    answered: int = 0
+    attempts: int = 1
+
+
 class PreviousSession(BaseModel):
     id: str
     createdAt: str

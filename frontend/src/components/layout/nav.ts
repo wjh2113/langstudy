@@ -3,6 +3,7 @@ export interface NavItem { to: string; name: string; label: string; icon: string
 /** Main navigation, shared by the sidebar and the avatar menu. */
 export const NAV: NavItem[] = [
   { to: '/', name: 'home', label: '首页', icon: 'home' },
+  { to: '/topics', name: 'topics', label: '话题管理', icon: 'list' },
   { to: '/review', name: 'review', label: '复习', icon: 'cards', badge: 'due' },
   { to: '/accent', name: 'accent', label: '口音听辨', icon: 'ear' },
   { to: '/history', name: 'history', label: '练习历史', icon: 'clock' },

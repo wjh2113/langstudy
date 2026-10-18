@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from .. import config, db, jobs
 from ..notes import generate_notes
 from ..deps import MAX_AUDIO, bad, current_user, own_session
-from ..schemas import JobRef, PreviousOut, ProgressReq, SessionOut, SessionSummary, ShareOut, StartedSession
+from ..schemas import JobRef, PreviousOut, ProgressReq, SessionOut, SessionSummary, ShareOut, StartedSession, TopicSummary
 
 router = APIRouter(prefix="/api", tags=["sessions"])
 
@@ -46,6 +46,12 @@ def api_sessions(all: bool = False, user: dict = Depends(current_user)):
     if all and user["role"] == "admin":
         return db.list_sessions(None)
     return db.list_sessions(user["id"])
+
+
+@router.get("/topics", response_model=List[TopicSummary])
+def api_topics(user: dict = Depends(current_user)):
+    """Distinct practice topics for this user, newest touch first."""
+    return db.list_topics(user["id"])
 
 
 @router.get("/sessions/previous", response_model=PreviousOut)

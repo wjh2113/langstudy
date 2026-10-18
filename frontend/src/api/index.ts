@@ -9,6 +9,21 @@ import type { AppConfig, Card, Coach, Content, CoursePack, Notes, PracticeState,
 
 export { ApiError, runJob } from './client'
 
+export interface TopicItem {
+  id: string
+  language?: string | null
+  level?: string | null
+  mode?: string | null
+  topic?: string | null
+  title?: string | null
+  overall?: number | null
+  createdAt: string
+  updatedAt?: string | null
+  done: boolean
+  hasNotes: boolean
+  answered: number
+  attempts: number
+}
 export interface NotesResponse { notes: Notes | null; generatedAt: string | null }
 export interface SharedReport { createdAt: string; content: Content; report: Report; owner: string }
 export interface PronounceResult { score: number | null; transcript: string; issues: { quote?: string; note?: string }[]; note: string }
@@ -69,6 +84,7 @@ export const api = {
 
   // sessions
   sessions: (all = false) => request<SessionSummary[]>(`/sessions${all ? '?all=true' : ''}`),
+  topics: () => request<TopicItem[]>('/topics'),
   session: (id: string) => request<SessionOut>(`/sessions/${id}`),
   deleteSession: (id: string) => request(`/sessions/${id}`, { method: 'DELETE' }),
   progress: (language: string) => request<{ createdAt: string; overall: number | null; dims: Record<string, number | null> }[]>(`/progress/${language}`),

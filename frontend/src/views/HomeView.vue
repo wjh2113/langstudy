@@ -33,12 +33,15 @@
     <section v-if="picks.length" class="resume">
       <div class="resume__head">
         <h2 class="section-title"><AppIcon name="history" /> 继续上次的练习</h2>
-        <label v-if="picks.length > 1" class="resume__pick">
-          <span class="sr-only">选择练习</span>
-          <select v-model="selectedId" aria-label="选择练习">
-            <option v-for="s in picks" :key="s.id" :value="s.id">{{ pickLabel(s) }}</option>
-          </select>
-        </label>
+        <div class="resume__tools">
+          <label v-if="picks.length > 1" class="resume__pick">
+            <span class="sr-only">选择练习</span>
+            <select v-model="selectedId" aria-label="选择练习">
+              <option v-for="s in picks" :key="s.id" :value="s.id">{{ pickLabel(s) }}</option>
+            </select>
+          </label>
+          <RouterLink to="/topics" class="btn btn--ghost btn--sm">话题管理</RouterLink>
+        </div>
       </div>
       <button v-if="selected" type="button" class="resume__item" :disabled="opening" @click="openPick(selected)">
         <span :class="['tag', `tag--${selected.language}`]">{{ LANG_NAMES[selected.language || 'en'] }}</span>
@@ -302,21 +305,30 @@ export default defineComponent({
       }
     }
 
+    function topicKey(s: { language?: string | null; level?: string | null; mode?: string | null; topic?: string | null }) {
+      return `${s.language || ''}|${s.level || ''}|${s.mode || ''}|${(s.topic || '').trim().toLowerCase()}`
+    }
     async function loadPicks(preferId = '') {
       try {
-        const all = await api.sessions()
-        const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString()
-        const recent = (s: SessionSummary) => (s.updatedAt || s.createdAt) > weekAgo
-        const continuing = all.filter((s) => !s.done && (s.answered || 0) > 0 && recent(s)).sort(byRecent)
-        const fresh = all.filter((s) => !s.done && !(s.answered || 0) && recent(s)).sort(byRecent)
-        const finished = all.filter((s) => s.done && recent(s)).sort(byRecent).slice(0, 12)
+        const [all, topics] = await Promise.all([api.sessions(), api.topics()])
+        const continuing = all.filter((s) => !s.done && (s.answered || 0) > 0).sort(byRecent)
+        const fresh = all.filter((s) => !s.done && !(s.answered || 0)).sort(byRecent)
+        const covered = new Set([...continuing, ...fresh].map(topicKey))
+        const earlier: SessionSummary[] = []
+        for (const t of topics) {
+          const key = topicKey(t)
+          if (!key.endsWith('|') && !covered.has(key)) {
+            covered.add(key)
+            earlier.push(t)
+          }
+        }
         const seen = new Set<string>()
         const list: SessionSummary[] = []
-        for (const s of [...continuing, ...fresh, ...finished]) {
+        for (const s of [...continuing, ...fresh, ...earlier]) {
           if (seen.has(s.id)) continue
           seen.add(s.id)
           list.push(s)
-          if (list.length >= 20) break
+          if (list.length >= 50) break
         }
         picks.value = list
         selectedId.value = (preferId && list.some((s) => s.id === preferId) && preferId)

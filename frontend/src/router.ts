@@ -12,6 +12,7 @@ export const router = createRouter({
     { path: '/review', name: 'review', component: () => import('./views/ReviewView.vue') },
     { path: '/accent', name: 'accent', component: () => import('./views/AccentQuizView.vue') },
     { path: '/history', name: 'history', component: () => import('./views/HistoryView.vue') },
+    { path: '/topics', name: 'topics', component: () => import('./views/TopicsView.vue') },
     { path: '/notes', name: 'notes', component: () => import('./views/NotesListView.vue') },
     { path: '/notes/:id', name: 'note', component: () => import('./views/NotesDetailView.vue'), meta: { bare: true } },
     { path: '/admin', name: 'admin', component: () => import('./views/AdminView.vue'), meta: { admin: true } },
