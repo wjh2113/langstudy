@@ -2,7 +2,12 @@
   <div class="page topics">
     <header class="page-head">
       <h1>话题管理</h1>
-      <RouterLink to="/" class="btn btn--ghost btn--sm"><AppIcon name="plus" :size="16" /> 去首页出新题</RouterLink>
+      <div class="page-head__actions">
+        <button type="button" class="btn btn--primary btn--sm" @click="openCreate">
+          <AppIcon name="plus" :size="16" /> 新增话题
+        </button>
+        <RouterLink to="/" class="btn btn--ghost btn--sm">去首页出新题</RouterLink>
+      </div>
     </header>
     <div class="searchrow">
       <label class="input input--search"><AppIcon name="search" :size="18" />
@@ -12,13 +17,13 @@
       <button v-for="f in filters" :key="f.key" type="button" :class="['chip', { on: filter === f.key }]" @click="filter = f.key">{{ f.label }}</button>
     </div>
     <p v-if="error" class="banner banner--error"><AppIcon name="alert" /> {{ error }}</p>
-    <p v-if="busy" class="banner banner--info"><span class="spinner" /> 正在重新生成「{{ busyTopic }}」… {{ waited }} 秒</p>
+    <p v-if="busy" class="banner banner--info"><span class="spinner" /> {{ busyLabel }} {{ waited ? waited + ' 秒' : '' }}</p>
 
     <div v-if="items && !shown.length" class="empty card">
       <AppIcon name="list" :size="32" />
       <p v-if="items.length">没有符合条件的话题。</p>
-      <p v-else>还没有话题。回首页输入话题生成练习，或管理员上传导入的 Markdown。</p>
-      <RouterLink to="/" class="btn btn--primary">回到首页</RouterLink>
+      <p v-else>还没有话题。点「新增话题」生成练习，或管理员在首页上传导入的 Markdown。</p>
+      <button type="button" class="btn btn--primary" @click="openCreate">新增话题</button>
     </div>
 
     <section v-if="shown.length" class="card card--flush">
@@ -57,26 +62,74 @@
                 <button type="button" class="btn btn--sm btn--ghost" :disabled="!!busy" @click="regen(t)">
                   <AppIcon name="refresh" :size="14" /> 重新生成
                 </button>
+                <button type="button" class="btn btn--sm btn--ghost" :disabled="!!busy" @click="remove(t)">
+                  <AppIcon name="trash" :size="14" /> 删除
+                </button>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
     </section>
+
+    <ModalDialog :open="creating" title="新增话题" icon="plus" @close="creating = false">
+      <form class="topic-create" @submit.prevent="create">
+        <label class="field">
+          <span>话题</span>
+          <input v-model="draft.topic" maxlength="200" required placeholder="例如：面试自我介绍、餐厅点餐…" />
+        </label>
+        <label class="field">
+          <span>语言</span>
+          <select v-model="draft.language">
+            <option value="en">英语</option>
+            <option value="ja">日语</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>级别</span>
+          <select v-model="draft.level">
+            <option value="beginner">入门</option>
+            <option value="intermediate">中级</option>
+            <option value="advanced">高级</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>形式</span>
+          <select v-model="draft.mode">
+            <option v-for="m in modes" :key="m.key" :value="m.key">{{ m.name }}</option>
+          </select>
+        </label>
+        <p class="muted small">会调用模型生成一套新练习，并出现在本列表里。</p>
+        <div class="topic-create__actions">
+          <button type="button" class="btn btn--ghost" @click="creating = false">取消</button>
+          <button type="submit" class="btn btn--primary" :disabled="!!busy || !draft.topic.trim()">生成并开始</button>
+        </div>
+      </form>
+    </ModalDialog>
   </div>
 </template>
 
 <script lang="ts">
-import { computed, defineComponent, onMounted, ref } from 'vue'
+import { computed, defineComponent, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppIcon from '../components/ui/AppIcon.vue'
+import ModalDialog from '../components/ui/ModalDialog.vue'
 import { api, type TopicItem } from '../api'
-import { store } from '../store'
+import type { Lang, Level, Mode } from '../api/models'
+import { setPrefs, store } from '../store'
 import { LANG_NAMES, LEVEL_NAMES, MODE_NAMES, dateTime, scoreBand } from '../lib/format'
+
+const MODES: { key: Mode; name: string }[] = [
+  { key: 'questions', name: '话题问答' },
+  { key: 'dialogue', name: '情景对话' },
+  { key: 'article', name: '短文' },
+  { key: 'chat', name: '自由对话' },
+  { key: 'dictation', name: '精听填空' },
+]
 
 export default defineComponent({
   name: 'TopicsView',
-  components: { AppIcon },
+  components: { AppIcon, ModalDialog },
   setup() {
     const router = useRouter()
     const items = ref<TopicItem[] | null>(null)
@@ -84,8 +137,15 @@ export default defineComponent({
     const q = ref('')
     const filter = ref('all')
     const busy = ref('')
-    const busyTopic = ref('')
+    const busyLabel = ref('')
     const waited = ref(0)
+    const creating = ref(false)
+    const draft = reactive({
+      topic: '',
+      language: store.prefs.language as Lang,
+      level: store.prefs.level as Level,
+      mode: store.prefs.mode as Mode,
+    })
 
     const load = () => api.topics().then((r) => (items.value = r)).catch((e) => (error.value = e.message))
     onMounted(load)
@@ -107,13 +167,21 @@ export default defineComponent({
       return !needle || [t.topic, t.title].some((x) => (x || '').toLowerCase().includes(needle))
     }))
 
+    function openCreate() {
+      draft.topic = ''
+      draft.language = store.prefs.language
+      draft.level = store.prefs.level
+      draft.mode = store.prefs.mode
+      creating.value = true
+      error.value = ''
+    }
     function open(t: TopicItem) {
       router.push(`/practice/${t.id}`)
     }
     async function reuse(t: TopicItem) {
       error.value = ''
       busy.value = t.id
-      busyTopic.value = t.topic || ''
+      busyLabel.value = `正在打开「${t.topic}」…`
       try {
         const r = await api.repeat(t.id)
         router.push(`/practice/${r.id}`)
@@ -128,13 +196,13 @@ export default defineComponent({
       if (!window.confirm(`重新生成「${t.topic}」？会再调用一次模型，得到一套新题。`)) return
       error.value = ''
       busy.value = t.id
-      busyTopic.value = t.topic
+      busyLabel.value = `正在重新生成「${t.topic}」…`
       waited.value = 0
       try {
         const r = await api.generate({
-          language: t.language as any,
-          level: t.level as any,
-          mode: t.mode as any,
+          language: t.language as Lang,
+          level: t.level as Level,
+          mode: t.mode as Mode,
           topic: t.topic,
           count: store.prefs.count,
           focus: '',
@@ -146,10 +214,54 @@ export default defineComponent({
         busy.value = ''
       }
     }
+    async function remove(t: TopicItem) {
+      if (!t.topic || !t.language || !t.level || !t.mode) return
+      const n = t.attempts || 1
+      if (!window.confirm(`删除「${t.topic}」？会去掉该语言、级别、形式下的全部 ${n} 次练习记录，不能恢复。`)) return
+      error.value = ''
+      busy.value = t.id
+      busyLabel.value = `正在删除「${t.topic}」…`
+      try {
+        await api.deleteTopic({
+          language: t.language, level: t.level, mode: t.mode, topic: t.topic,
+        })
+        await load()
+      } catch (e: any) {
+        error.value = e.message
+      } finally {
+        busy.value = ''
+      }
+    }
+    async function create() {
+      const topic = draft.topic.trim()
+      if (!topic || busy.value) return
+      error.value = ''
+      busy.value = 'create'
+      busyLabel.value = `正在生成「${topic}」…`
+      waited.value = 0
+      setPrefs({ language: draft.language, level: draft.level, mode: draft.mode, topic })
+      try {
+        const r = await api.generate({
+          language: draft.language,
+          level: draft.level,
+          mode: draft.mode,
+          topic,
+          count: store.prefs.count,
+          focus: '',
+        }, (s) => (waited.value = s))
+        creating.value = false
+        router.push(`/practice/${r.id}`)
+      } catch (e: any) {
+        error.value = e.message
+      } finally {
+        busy.value = ''
+      }
+    }
 
     return {
-      items, error, q, filter, filters, shown, busy, busyTopic, waited,
-      open, reuse, regen, LANG_NAMES, LEVEL_NAMES, MODE_NAMES, dateTime, scoreBand,
+      items, error, q, filter, filters, shown, busy, busyLabel, waited, creating, draft, modes: MODES,
+      open, openCreate, reuse, regen, remove, create,
+      LANG_NAMES, LEVEL_NAMES, MODE_NAMES, dateTime, scoreBand,
     }
   },
 })

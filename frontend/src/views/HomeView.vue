@@ -188,11 +188,15 @@
       </label>
       <textarea v-if="!isTopicImport" v-model="paste" class="upload-text" rows="8" maxlength="40000" placeholder="或者把课件文字粘贴在这里" />
       <p v-if="isTopicImport" class="muted">已选 Markdown / 压缩包，点下面会按导入话题处理。</p>
+      <p v-if="imported.length && importReplaced" class="banner banner--info">
+        已按「语言 + 级别 + 形式 + 话题」覆盖原先 {{ importReplaced }} 份练习。
+      </p>
       <ul v-if="imported.length" class="import-list">
         <li v-for="item in imported" :key="item.id">
           <RouterLink :to="`/practice/${item.id}`" @click="closeUpload">{{ item.topic }}</RouterLink>
           <span class="tag tag--mode">{{ MODE_NAMES[item.mode] || item.mode }}</span>
           <span v-if="item.hasNotes" class="muted">含学习笔记</span>
+          <span v-if="item.replaced" class="muted">已覆盖 {{ item.replaced }} 份</span>
         </li>
       </ul>
       <p v-for="(msg, i) in importErrors" :key="'ie'+i" class="banner banner--error"><AppIcon name="alert" /> {{ msg }}</p>
@@ -267,8 +271,9 @@ export default defineComponent({
     const pasting = ref(false)
     const prompt = ref('')
     const copiedPrompt = ref(false)
-    const imported = ref<{ id: string; topic: string; mode: string; title: string; hasNotes: boolean }[]>([])
+    const imported = ref<{ id: string; topic: string; mode: string; title: string; hasNotes: boolean; replaced?: number }[]>([])
     const importErrors = ref<string[]>([])
+    const importReplaced = ref(0)
     let pending: Record<string, any> | null = null
 
     const isTopicImport = computed(() => !!file.value && /\.(md|markdown|txt|zip)$/i.test(file.value.name))
@@ -507,6 +512,7 @@ export default defineComponent({
       file.value = input.files?.[0] || null
       imported.value = []
       importErrors.value = []
+      importReplaced.value = 0
     }
 
     function closeUpload() {
@@ -515,12 +521,14 @@ export default defineComponent({
       paste.value = ''
       imported.value = []
       importErrors.value = []
+      importReplaced.value = 0
     }
 
     async function openUpload() {
       uploadOpen.value = true
       imported.value = []
       importErrors.value = []
+      importReplaced.value = 0
       if (isAdmin.value && !prompt.value) {
         try { prompt.value = (await api.importPrompt()).prompt } catch (e: any) { error.value = e.message }
       }
@@ -553,6 +561,7 @@ export default defineComponent({
           const result = await api.importTopics(file.value!)
           imported.value = result.imported
           importErrors.value = result.errors || []
+          importReplaced.value = result.replaced || 0
           if (result.imported.length) await loadPicks(result.imported[0].id)
           if (result.imported.length === 1 && !result.errors?.length) {
             closeUpload()
@@ -590,7 +599,7 @@ export default defineComponent({
     return {
       store, prefs, topic, busy, waited, error, reuse, uploadOpen, file, paste, pasting, onFile, upload,
       closeUpload, openUpload, isAdmin, isTopicImport, uploadAccept, prompt, copiedPrompt, copyPrompt,
-      imported, importErrors,
+      imported, importErrors, importReplaced,
       languages, levelOptions, regions, accentKey, currentAccent, currentRegion,
       regionAccents, pickRegion, hasCount, countHint, coach, autoApplied,
       picks, selectedId, selected, opening, pickOpen, pickQuery, pickActive, filteredPicks,

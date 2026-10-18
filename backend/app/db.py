@@ -584,6 +584,28 @@ def delete_session(sid: str):
         c.execute("DELETE FROM sessions WHERE id=?", (sid,))
 
 
+def session_ids_by_topic(user_id: int, language: str, level: str, mode: str, topic: str) -> list[str]:
+    """All of this user's sessions that share language + level + mode + topic."""
+    with _conn() as c:
+        rows = c.execute(
+            """SELECT id FROM sessions
+               WHERE user_id=? AND language=? AND level=? AND mode=?
+                 AND lower(trim(topic))=lower(trim(?))""",
+            (user_id, language, level, mode, (topic or "").strip()),
+        ).fetchall()
+    return [r["id"] for r in rows]
+
+
+def delete_sessions_by_topic(user_id: int, language: str, level: str, mode: str, topic: str) -> list[str]:
+    """Remove every session for this topic key. Returns the deleted ids (turns cascade)."""
+    ids = session_ids_by_topic(user_id, language, level, mode, topic)
+    if not ids:
+        return []
+    with _conn() as c:
+        c.executemany("DELETE FROM sessions WHERE id=?", [(i,) for i in ids])
+    return ids
+
+
 def create_course(user_id: int, title: str, topic: str, language: str, source_name: str, items: list) -> str:
     cid = uuid.uuid4().hex[:12]
     with _conn() as c:

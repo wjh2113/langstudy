@@ -54,6 +54,18 @@ def api_topics(user: dict = Depends(current_user)):
     return db.list_topics(user["id"])
 
 
+@router.delete("/topics")
+def api_delete_topic(language: str, level: str, mode: str, topic: str, user: dict = Depends(current_user)):
+    """Delete every practice under language + level + mode + topic for this user."""
+    topic = (topic or "").strip()
+    if not topic or not language or not level or not mode:
+        bad("缺少话题、语言、级别或形式")
+    ids = db.delete_sessions_by_topic(user["id"], language, level, mode, topic)
+    for sid in ids:
+        shutil.rmtree(audio_dir(sid), ignore_errors=True)
+    return {"ok": True, "deleted": len(ids)}
+
+
 @router.get("/sessions/previous", response_model=PreviousOut)
 def api_previous(language: str, level: str, mode: str, topic: str, user: dict = Depends(current_user)):
     """Latest earlier session with the same language/level/mode/topic, so its material can be reused."""

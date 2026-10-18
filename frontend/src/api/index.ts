@@ -51,8 +51,11 @@ export const api = {
   importTopics: (file: File) => {
     const form = new FormData()
     form.append('file', file)
-    return request<{ imported: { id: string; topic: string; mode: string; title: string; hasNotes: boolean }[]; errors: string[] }>(
-      '/admin/import', { method: 'POST', body: form })
+    return request<{
+      imported: { id: string; topic: string; mode: string; title: string; hasNotes: boolean; replaced?: number }[]
+      replaced: number
+      errors: string[]
+    }>('/admin/import', { method: 'POST', body: form })
   },
 
   // practice
@@ -85,6 +88,8 @@ export const api = {
   // sessions
   sessions: (all = false) => request<SessionSummary[]>(`/sessions${all ? '?all=true' : ''}`),
   topics: () => request<TopicItem[]>('/topics'),
+  deleteTopic: (q: { language: string; level: string; mode: string; topic: string }) =>
+    request<{ ok: boolean; deleted: number }>('/topics?' + new URLSearchParams(q), { method: 'DELETE' }),
   session: (id: string) => request<SessionOut>(`/sessions/${id}`),
   deleteSession: (id: string) => request(`/sessions/${id}`, { method: 'DELETE' }),
   progress: (language: string) => request<{ createdAt: string; overall: number | null; dims: Record<string, number | null> }[]>(`/progress/${language}`),

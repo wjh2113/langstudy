@@ -1,13 +1,20 @@
 """/api/admin: invites, users, AI usage and answer statistics (administrator only)."""
+import re
+import shutil
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, UploadFile
 
-from .. import ai, auth, db
+from .. import ai, auth, config, db
 from ..deps import admin_user, bad
 from ..import_pack import PROMPT, parse_documents, read_upload
 from ..llm import LLMError
 from ..schemas import InviteReq, UserPatch
+
+
+def _clear_session_audio(sid: str) -> None:
+    if re.fullmatch(r"[0-9a-f]{12}", sid or ""):
+        shutil.rmtree(config.DATA_DIR / "audio" / sid, ignore_errors=True)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -73,16 +80,25 @@ async def api_import(file: UploadFile = File(...), admin: dict = Depends(admin_u
     if not ready:
         bad("；".join(errors) or "没有可以导入的话题")
     imported = []
+    replaced = 0
     for item in ready:
-        sid = db.create_session(item["content"], admin["id"])
+        content = item["content"]
+        # Same language + level + mode + topic → replace earlier imports/practices.
+        old_ids = db.delete_sessions_by_topic(
+            admin["id"], content["language"], content["level"], content["mode"], content["topic"],
+        )
+        for oid in old_ids:
+            _clear_session_audio(oid)
+        replaced += len(old_ids)
+        sid = db.create_session(content, admin["id"])
         if item["notes"]:
             db.save_notes(sid, item["notes"])
-        content = item["content"]
         imported.append({
             "id": sid, "topic": content["topic"], "mode": content["mode"],
             "title": content["title"], "hasNotes": bool(item["notes"]),
+            "replaced": len(old_ids),
         })
-    return {"imported": imported, "errors": errors}
+    return {"imported": imported, "replaced": replaced, "errors": errors}
 
 
 @router.get("/usage")

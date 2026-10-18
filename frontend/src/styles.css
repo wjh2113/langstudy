@@ -511,6 +511,13 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
 .topics-table__topic { display: grid; gap: 4px; }
 .topics-table__topic strong { font-weight: 600; }
 .topics-table__actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.topic-create { display: grid; gap: 14px; }
+.topic-create .field span { font-size: 13px; color: var(--text-2); }
+.topic-create input, .topic-create select {
+  width: 100%; height: 44px; padding: 0 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text); font: inherit;
+}
+.topic-create__actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
 .coach { width: min(960px, 100%); margin: 0 auto; display: grid; gap: 10px; padding: 16px 20px; border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface); }
 .coach__row { display: flex; align-items: center; gap: 12px; font-size: 14px; }
 .coach__row p { flex: 1; }
