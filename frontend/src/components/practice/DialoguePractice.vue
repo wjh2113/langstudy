@@ -86,7 +86,7 @@ import PronBadge from '../ui/PronBadge.vue'
 import TargetText from '../ui/TargetText.vue'
 import TranslationLine from '../ui/TranslationLine.vue'
 import type { Content, Env, Turn } from '../../api/models'
-import { play, stop } from '../../lib/audio'
+import { play, prefetch, stop } from '../../lib/audio'
 import { diffReference } from '../../lib/diff'
 import { useModeState, useRevealed } from '../../lib/practice'
 
@@ -140,12 +140,14 @@ export default defineComponent({
         return
       }
       const at = st.idx
+      const opts = {
+        language: props.env.language, rate: props.env.rate, voiceIndex: voiceOf(line.role),
+        accent: props.env.accent || 'default', locale: props.env.accentLocale || null,
+      }
+      prefetch(line.text, opts) // first short piece while the 400ms beat waits
       timer = setTimeout(() => {
         props.tracker.count(line.id)
-        play(line.id, line.text, {
-          language: props.env.language, rate: props.env.rate, voiceIndex: voiceOf(line.role),
-          accent: props.env.accent || 'default', locale: props.env.accentLocale || null,
-        })
+        play(line.id, line.text, opts)
           .catch(() => {})
           .finally(() => { if (st.idx === at) st.idx++ })
       }, 400)

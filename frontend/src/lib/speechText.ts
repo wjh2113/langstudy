@@ -1,12 +1,12 @@
 /**
  * Cut spoken text into short pieces so the first one can be synthesized quickly.
- * Same idea as 小树学堂: a short opening, then longer pieces. Decimal points and
- * titles like "Mr." stay in one piece.
+ * Same idea as 小树学堂: first piece ≤60 chars so sound starts soon, later pieces
+ * ≤120. Decimal points and titles like "Mr." stay in one piece.
  */
 
 const ABBREV = /^(?:Mr|Mrs|Ms|Dr|Prof|St|Sr|Jr|vs|etc|e\.g|i\.e|U\.S|U\.K)\.?$/i
 
-export function splitSentences(text: string, max = 140, firstMax = 80): string[] {
+export function splitSentences(text: string, max = 120, firstMax = 60): string[] {
   const t = String(text || '').replace(/\s+/g, ' ').trim()
   if (!t) return []
   const parts = splitMarks(t)

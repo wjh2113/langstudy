@@ -127,7 +127,9 @@ async def synthesize(text: str, language: str, voice_index: int = 0, rate: float
             audio = await (_gateway(text, voice, rate) if provider == "gateway" else _edge(text, voice, rate))
             if not audio:
                 raise TTSError("语音合成没有返回音频")
-            if provider == "gateway":
+            # Short first pieces (≤60 chars, same cut as the frontend) skip silence
+            # tightening so the opening clip returns sooner; longer lines still tighten.
+            if provider == "gateway" and len(text) > 60:
                 audio = await asyncio.to_thread(tighten_mp3, audio, text)
             tmp = path.with_suffix(".part")
             tmp.write_bytes(audio)

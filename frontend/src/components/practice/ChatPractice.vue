@@ -50,7 +50,7 @@ import PlayButton from '../ui/PlayButton.vue'
 import TargetText from '../ui/TargetText.vue'
 import { api } from '../../api'
 import type { Content, Env, Turn } from '../../api/models'
-import { play } from '../../lib/audio'
+import { play, prefetch } from '../../lib/audio'
 import { SESSION_ID, useModeState, useRevealed } from '../../lib/practice'
 
 interface Msg { id: string; role: 'ai' | 'user'; text: string }
@@ -82,18 +82,31 @@ export default defineComponent({
     const userCount = computed(() => st.messages.filter((m) => m.role === 'user').length)
     const lastIsAi = computed(() => st.messages[st.messages.length - 1]?.role === 'ai')
 
-    function speak(m: Msg) {
-      props.tracker.count(m.id)
-      play(m.id, m.text, {
+    function speakOpts() {
+      return {
         language: props.env.language, rate: props.env.rate, voiceIndex: props.env.voiceIndex,
         accent: props.env.accent || 'default', locale: props.env.accentLocale || null,
-      })
+      }
+    }
+    function warm(m: Msg) {
+      prefetch(m.text, speakOpts())
+    }
+    function speak(m: Msg) {
+      props.tracker.count(m.id)
+      play(m.id, m.text, speakOpts())
         .catch(() => {})
         .finally(() => { if (st.messages[st.messages.length - 1]?.id === m.id && !st.ended) listen.value++ })
     }
     onMounted(() => {
       if (!lastIsAi.value && !st.ended) askAgain() // resumed before the AI had replied
-      else if (st.messages.length === 1) setTimeout(() => speak(st.messages[0]), 400)
+      else if (st.messages.length === 1) {
+        warm(st.messages[0]) // start synthesizing the opening before auto-play
+        setTimeout(() => speak(st.messages[0]), 400)
+      }
+    })
+    watch(() => st.messages.map((m) => m.id).join(','), () => {
+      const last = st.messages[st.messages.length - 1]
+      if (last?.role === 'ai') warm(last)
     })
 
     async function askAgain() {

@@ -22,7 +22,12 @@ assert.equal(splitSentences('你好。我们开始吧。').length, 1)
 const long = 'I worked on support tickets, talked to customers every day, and learned how to stay calm when someone is upset about a late delivery'
 const cut = splitSentences(long)
 assert.ok(cut.length >= 2, cut.join(' | '))
-assert.ok(cut[0].length <= 80, cut[0])
+assert.ok(cut[0].length <= 60, cut[0])
 assert.ok(cut[0].endsWith(','), cut[0])
+
+const chat = "Hey! I didn't expect to see you with someone tonight. Is this your partner?"
+const chatParts = splitSentences(chat)
+assert.ok(chatParts.length >= 2, chatParts.join(' | '))
+assert.ok(chatParts[0].length <= 60, chatParts[0])
 
 console.log('ok splitSentences')

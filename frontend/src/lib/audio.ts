@@ -77,6 +77,19 @@ function fetchAudio(text: string, language: string, voiceIndex: number, rate: nu
   return job
 }
 
+/** Warm the first short piece (and optionally the rest) so click-to-sound is quick. Same idea as 小树学堂 prefetch. */
+export function prefetch(text: string, opts: PlayOptions = {}) {
+  if (!serverTTS || !text?.trim()) return
+  const language = opts.language ?? 'en'
+  const rate = opts.rate ?? 1
+  const voiceIndex = opts.voiceIndex ?? voiceOpts.voiceIndex
+  let accent = opts.accent
+  if (accent === undefined) ({ accent } = voiceOpts)
+  const accentKey = accent || 'default'
+  const first = splitSentences(text)[0]
+  if (first) fetchAudio(first, language, voiceIndex, rate, accentKey).catch(() => {})
+}
+
 function playUrl(url: string, token: number, onStart?: () => void) {
   return new Promise<void>((resolve, reject) => {
     if (token !== current.token) return resolve()
@@ -113,20 +126,25 @@ export async function play(id: string, text: string, opts: PlayOptions = {}) {
   let locale = opts.locale
   if (accent === undefined) ({ accent, locale } = voiceOpts)
   const accentKey = accent || 'default'
+  // Kick off the first chunk before stop() so a warm prefetch is not thrown away.
+  const parts = (chunked ? splitSentences(text) : [text.trim()]).filter(Boolean)
+  const firstJob = serverTTS && parts[0]
+    ? fetchAudio(parts[0], language, voiceIndex, rate, accentKey)
+    : null
   stop()
   const token = current.token
   current.id = id
   emit()
-  const parts = (chunked ? splitSentences(text) : [text.trim()]).filter(Boolean)
   try {
     if (!serverTTS) {
       await speakBrowser(parts.join(' ') || text, language, rate, token, locale, onStart)
       return
     }
-    let upcoming: Promise<string> | null = null
+    let upcoming: Promise<string> | null = firstJob
     for (let i = 0; i < parts.length; i++) {
       if (token !== current.token) return
       const job = upcoming ?? fetchAudio(parts[i], language, voiceIndex, rate, accentKey)
+      upcoming = null
       let url: string | null = null
       try {
         url = await job

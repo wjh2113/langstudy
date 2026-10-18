@@ -112,17 +112,22 @@ def test_gateway_audio_is_tightened_once():
     orig = config.tts_uses_gateway
     config.tts_uses_gateway = lambda: True
 
+    long_line = "I didn't expect to see you with someone tonight at the party."
+
     async def run():
-        first = await tts.synthesize("Hi there", "en", 0, 1.0, "default")
-        second = await tts.synthesize("Hi there", "en", 0, 1.0, "default")
+        first = await tts.synthesize(long_line, "en", 0, 1.0, "default")
+        second = await tts.synthesize(long_line, "en", 0, 1.0, "default")
         assert first == second
         assert _longest_internal_silence_ms(_decode(first)) <= KEEP_MS + 40
+        # Opening clips stay short so they return without tighten latency.
+        short = await tts.synthesize("Hey!", "en", 0, 1.0, "default")
+        assert short == raw
 
     try:
         asyncio.run(run())
     finally:
         config.tts_uses_gateway = orig
-    assert calls["n"] == 1
+    assert calls["n"] == 2
 
 
 def _encode(samples: array.array) -> bytes:
