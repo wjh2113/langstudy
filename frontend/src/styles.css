@@ -443,6 +443,9 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
 }
 .upload-pick input { max-width: 100%; }
 .upload-text { width: 100%; margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); resize: vertical; }
+.upload-prompt { margin: 12px 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); }
+.upload-prompt summary { cursor: pointer; font-weight: 600; }
+.upload-prompt .btn { margin-top: 8px; }
 .course__list { list-style: none; display: grid; gap: 12px; padding: 0; margin: 0; }
 .course__item { display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center; }
 .course__no { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--primary-soft); color: var(--primary); font-weight: 700; }

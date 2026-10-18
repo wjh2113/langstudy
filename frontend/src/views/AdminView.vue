@@ -140,32 +140,6 @@
       </section>
     </template>
 
-    <template v-else-if="tab === 'import'">
-      <section class="card">
-        <h2 class="card__title">发给其他模型的说明</h2>
-        <p class="muted">把下面整段复制给别的大模型。有课件时，在同一条消息里附上 PPT、PDF、Word，或把讲义文字贴在后面，它会以课件为准。没有课件时，在后面写上话题和目标语言（英语、日语，或两种都要）。交回来的可以是一个 Markdown，也可以是装着多个 Markdown 的压缩包。</p>
-        <textarea class="import-prompt" readonly :value="prompt" rows="14" />
-        <button type="button" class="btn btn--outline" :disabled="!prompt" @click="copy(prompt, 'prompt')">
-          <AppIcon name="copy" :size="16" /> {{ copied === 'prompt' ? '已复制' : '复制说明' }}
-        </button>
-      </section>
-      <section class="card">
-        <h2 class="card__title">导入话题</h2>
-        <p class="muted">导入后归在你自己的账号下，可以在历史记录里打开练习，学习笔记里已经有单词、语法和句型。一个文件里不同级别、不同形式的多个块会一起导入，笔记条数也不会截掉。</p>
-        <label class="btn btn--primary">
-          {{ importing ? '正在导入…' : '选择 .md 或 .zip' }}
-          <input class="sr-only" type="file" accept=".md,.markdown,.txt,.zip,text/markdown,application/zip" :disabled="importing" @change="onImport" />
-        </label>
-        <ul v-if="imported.length" class="import-list">
-          <li v-for="item in imported" :key="item.id">
-            <RouterLink :to="`/practice/${item.id}`">{{ item.topic }}</RouterLink>
-            <span class="tag tag--mode">{{ MODE_NAMES[item.mode] || item.mode }}</span>
-            <span v-if="item.hasNotes" class="muted">含学习笔记</span>
-          </li>
-        </ul>
-        <p v-for="(msg, i) in importErrors" :key="i" class="banner banner--error"><AppIcon name="alert" /> {{ msg }}</p>
-      </section>
-    </template>
   </div>
 </template>
 
@@ -174,7 +148,7 @@ import { defineComponent, onMounted, reactive, ref, watch } from 'vue'
 import AppIcon from '../components/ui/AppIcon.vue'
 import { api } from '../api'
 import { store } from '../store'
-import { dateOnly, dateTime, MODE_NAMES } from '../lib/format'
+import { dateOnly, dateTime } from '../lib/format'
 
 export default defineComponent({
   name: 'AdminView',
@@ -191,11 +165,6 @@ export default defineComponent({
     const copied = ref('')
     const error = ref('')
     const busy = ref(false)
-    const prompt = ref('')
-    const importing = ref(false)
-    const imported = ref<{ id: string; topic: string; mode: string; title: string; hasNotes: boolean }[]>([])
-    const importErrors = ref<string[]>([])
-
     const load = async () => {
       try {
         ;[invites.value, users.value] = await Promise.all([api.invites(), api.users()])
@@ -205,9 +174,6 @@ export default defineComponent({
     }
     onMounted(load)
     watch(tab, async (t) => {
-      if (t === 'import' && !prompt.value) {
-        try { prompt.value = (await api.importPrompt()).prompt } catch (e: any) { error.value = e.message }
-      }
       if (t !== 'usage') return
       try {
         ;[usage.value, mistakes.value] = await Promise.all([api.usage(30), api.mistakeStats()])
@@ -215,25 +181,6 @@ export default defineComponent({
         error.value = e.message
       }
     })
-
-    async function onImport(ev: Event) {
-      const input = ev.target as HTMLInputElement
-      const file = input.files?.[0]
-      input.value = ''
-      if (!file) return
-      importing.value = true
-      error.value = ''
-      importErrors.value = []
-      try {
-        const result = await api.importTopics(file)
-        imported.value = result.imported
-        importErrors.value = result.errors || []
-      } catch (e: any) {
-        error.value = e.message
-      } finally {
-        importing.value = false
-      }
-    }
 
     const link = (code: string) => `${location.origin}/?invite=${code}`
 
@@ -285,10 +232,9 @@ export default defineComponent({
 
     return {
       me: store.user, tab, invites, users, usage, mistakes, form, fresh, resetInfo, copied, error, busy,
-      prompt, importing, imported, importErrors, onImport, MODE_NAMES,
       link, create, copy, revoke, toggle, reset,
       dateOnly, dateTime, fmtCredits,
-      tabs: [{ key: 'invites', label: '邀请码' }, { key: 'users', label: '用户' }, { key: 'usage', label: '用量与统计' }, { key: 'import', label: '导入话题' }],
+      tabs: [{ key: 'invites', label: '邀请码' }, { key: 'users', label: '用户' }, { key: 'usage', label: '用量与统计' }],
       STATUS: {
         active: { name: '可用', cls: 'ok' }, used: { name: '已用完', cls: 'muted' },
         expired: { name: '已过期', cls: 'warn' }, revoked: { name: '已作废', cls: 'bad' },

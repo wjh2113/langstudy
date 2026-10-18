@@ -26,7 +26,7 @@ def extract(filename: str, data: bytes) -> str:
     elif ext == ".doc":
         raise ExtractError("旧版 .doc 读不了，请在 Word 里另存为 .docx")
     elif ext in {".md", ".markdown", ".txt", ".zip"}:
-        raise ExtractError("Markdown 或压缩包请到「用户与邀请 → 导入话题」上传；这里只收 PDF、PPTX、DOCX，或直接粘贴文字")
+        raise ExtractError("这份文件请用管理员账号在首页「上传资料」里导入；整理课程包只收 PDF、PPTX、DOCX，或直接粘贴文字")
     else:
         raise ExtractError("只支持 PDF、PPTX、DOCX，或直接粘贴文字")
     text = text.strip()
