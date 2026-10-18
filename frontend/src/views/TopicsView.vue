@@ -124,16 +124,40 @@
                 <td class="nowrap">{{ dateTime(t.updatedAt || t.createdAt) }}</td>
                 <td>{{ t.attempts }}</td>
                 <td class="topics-table__actions" @click.stop>
-                  <button v-if="!t.done" type="button" class="btn btn--sm btn--primary" :disabled="!!busy" @click="open(t)">
-                    {{ (t.answered || 0) > 0 ? '继续' : '开始' }}
-                  </button>
-                  <button v-else type="button" class="btn btn--sm btn--outline" :disabled="!!busy" @click="reuse(t)">用上次的题</button>
-                  <button type="button" class="btn btn--sm btn--ghost" :disabled="!!busy" @click="regen(t)">
-                    <AppIcon name="refresh" :size="14" /> 重新生成
-                  </button>
-                  <button type="button" class="btn btn--sm btn--ghost" :disabled="!!busy" @click="remove(t)">
-                    <AppIcon name="trash" :size="14" /> 删除
-                  </button>
+                  <button
+                    v-if="!t.done"
+                    type="button"
+                    class="icon-btn icon-btn--primary"
+                    :disabled="!!busy"
+                    :title="(t.answered || 0) > 0 ? '继续' : '开始'"
+                    :aria-label="(t.answered || 0) > 0 ? '继续' : '开始'"
+                    @click="open(t)"
+                  ><AppIcon name="play" :size="16" /></button>
+                  <button
+                    v-else
+                    type="button"
+                    class="icon-btn"
+                    :disabled="!!busy"
+                    title="用上次的题"
+                    aria-label="用上次的题"
+                    @click="reuse(t)"
+                  ><AppIcon name="repeat" :size="16" /></button>
+                  <button
+                    type="button"
+                    class="icon-btn"
+                    :disabled="!!busy"
+                    title="重新生成"
+                    aria-label="重新生成"
+                    @click="regen(t)"
+                  ><AppIcon name="refresh" :size="16" /></button>
+                  <button
+                    type="button"
+                    class="icon-btn icon-btn--danger"
+                    :disabled="!!busy"
+                    title="删除"
+                    aria-label="删除"
+                    @click="remove(t)"
+                  ><AppIcon name="trash" :size="16" /></button>
                 </td>
               </tr>
             </template>
