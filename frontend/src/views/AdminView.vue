@@ -151,7 +151,7 @@
       </section>
       <section class="card">
         <h2 class="card__title">导入话题</h2>
-        <p class="muted">导入后归在你自己的账号下，可以在历史记录里打开练习，学习笔记里已经有单词、语法和句型。</p>
+        <p class="muted">导入后归在你自己的账号下，可以在历史记录里打开练习，学习笔记里已经有单词、语法和句型。一个文件里不同级别、不同形式的多个块会一起导入，笔记条数也不会截掉。</p>
         <label class="btn btn--primary">
           {{ importing ? '正在导入…' : '选择 .md 或 .zip' }}
           <input class="sr-only" type="file" accept=".md,.markdown,.txt,.zip,text/markdown,application/zip" :disabled="importing" @change="onImport" />

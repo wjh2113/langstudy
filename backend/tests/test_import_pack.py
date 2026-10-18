@@ -123,14 +123,15 @@ def test_prompt_follows_the_courseware():
     assert "没有课件时" in PROMPT
     assert "两种都要" in PROMPT
     assert "每个级别都要生成" in PROMPT
-    assert "10 个语法、20 个句型" in PROMPT
+    assert "写多了也会全部导入" in PROMPT
+    assert "会一起导入" in PROMPT
     assert "不要为了凑数去编" in PROMPT
     assert "不要用代码块把全文包起来" in PROMPT
 
 
-def test_notes_keep_the_larger_counts():
-    grammar = "\n".join(f"### 语法{i}\n讲解: 讲解{i}\n例句: Example {i}. | 翻译{i}" for i in range(10))
-    patterns = "\n".join(f"### 句型{i}\n用法: 用法{i}\n例句: Pattern {i}. | 译文{i}" for i in range(12))
+def test_notes_keep_every_item():
+    grammar = "\n".join(f"### 语法{i}\n讲解: 讲解{i}\n例句: Example {i}. | 翻译{i}" for i in range(12))
+    patterns = "\n".join(f"### 句型{i}\n用法: 用法{i}\n例句: Pattern {i}. | 译文{i}" for i in range(25))
     text = f"""# 点餐
 
 语言: en
@@ -157,8 +158,59 @@ def test_notes_keep_the_larger_counts():
     ready, errors = parse_documents([text])
     assert not errors
     notes = ready[0]["notes"]
-    assert len(notes["grammar"]) == 10
-    assert len(notes["patterns"]) == 12
+    assert len(notes["grammar"]) == 12
+    assert len(notes["patterns"]) == 25
+
+
+def test_levels_and_modes_import_together():
+    text = """# 餐厅点餐
+
+语言: en
+级别: beginner
+形式: questions
+
+## 场景
+
+在餐厅。
+
+## 问题
+
+### What would you like?
+提示: 说菜名。
+
+# 餐厅点餐
+
+语言: en
+级别: intermediate
+形式: dialogue
+
+## 场景
+
+在餐厅点餐。
+
+## 角色
+
+### A
+名字: Alex
+说明: 服务员
+
+### B
+名字: Mia
+说明: 客人
+
+## 台词
+
+### A
+Hello, can I help you?
+
+### B
+A table for two, please.
+"""
+    ready, errors = parse_documents([text])
+    assert not errors
+    assert len(ready) == 2
+    assert ready[0]["content"]["level"] == "beginner" and ready[0]["content"]["mode"] == "questions"
+    assert ready[1]["content"]["level"] == "intermediate" and ready[1]["content"]["mode"] == "dialogue"
 
 
 if __name__ == "__main__":
