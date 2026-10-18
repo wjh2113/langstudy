@@ -83,7 +83,7 @@ async def api_import(file: UploadFile = File(...), admin: dict = Depends(admin_u
     replaced = 0
     for item in ready:
         content = item["content"]
-        # Same language + level + mode + topic → replace earlier imports/practices.
+        # Same language + topic + level + mode → replace earlier imports/practices.
         old_ids = db.delete_sessions_by_topic(
             admin["id"], content["language"], content["level"], content["mode"], content["topic"],
         )

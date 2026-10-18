@@ -3,6 +3,9 @@
     <header class="page-head">
       <h1>话题管理</h1>
       <div class="page-head__actions">
+        <button v-if="isAdmin" type="button" class="btn btn--outline btn--sm" :disabled="!!busy" @click="openImport">
+          <AppIcon name="doc" :size="16" /> 导入
+        </button>
         <button type="button" class="btn btn--primary btn--sm" @click="openCreate">
           <AppIcon name="plus" :size="16" /> 新增话题
         </button>
@@ -22,8 +25,11 @@
     <div v-if="items && !shown.length" class="empty card">
       <AppIcon name="list" :size="32" />
       <p v-if="items.length">没有符合条件的话题。</p>
-      <p v-else>还没有话题。点「新增话题」生成练习，或管理员在首页上传导入的 Markdown。</p>
-      <button type="button" class="btn btn--primary" @click="openCreate">新增话题</button>
+      <p v-else>还没有话题。点「新增话题」生成练习<template v-if="isAdmin">，或点「导入」上传 Markdown</template>。</p>
+      <div class="empty__actions">
+        <button v-if="isAdmin" type="button" class="btn btn--outline" @click="openImport">导入</button>
+        <button type="button" class="btn btn--primary" @click="openCreate">新增话题</button>
+      </div>
     </div>
 
     <section v-if="shown.length" class="card card--flush">
@@ -106,6 +112,39 @@
         </div>
       </form>
     </ModalDialog>
+
+    <ModalDialog :open="importing" title="导入话题" icon="doc" wide @close="closeImport">
+      <p class="muted">上传别的模型写好的 <code>.md</code> 或 <code>.zip</code>。相同「语言 + 话题 + 级别 + 形式」会覆盖旧练习。</p>
+      <details class="upload-prompt">
+        <summary>发给其他模型的说明</summary>
+        <textarea class="import-prompt" readonly :value="prompt" rows="10" />
+        <button type="button" class="btn btn--outline btn--sm" :disabled="!prompt" @click="copyPrompt">
+          <AppIcon name="copy" :size="14" /> {{ copiedPrompt ? '已复制' : '复制说明' }}
+        </button>
+      </details>
+      <label class="upload-pick">
+        <input type="file" accept=".md,.zip,text/markdown,application/zip" :disabled="!!busy" @change="onImportFile" />
+        <span>{{ importFile ? importFile.name : '选择 .md 或 .zip' }}</span>
+      </label>
+      <p v-if="imported.length && importReplaced" class="banner banner--info">
+        已按「语言 + 话题 + 级别 + 形式」覆盖原先 {{ importReplaced }} 份练习。
+      </p>
+      <ul v-if="imported.length" class="import-list">
+        <li v-for="item in imported" :key="item.id">
+          <RouterLink :to="`/practice/${item.id}`" @click="closeImport">{{ item.topic }}</RouterLink>
+          <span class="tag tag--mode">{{ MODE_NAMES[item.mode] || item.mode }}</span>
+          <span v-if="item.hasNotes" class="muted">含学习笔记</span>
+          <span v-if="item.replaced" class="muted">已覆盖 {{ item.replaced }} 份</span>
+        </li>
+      </ul>
+      <p v-for="(msg, i) in importErrors" :key="'ie'+i" class="banner banner--error"><AppIcon name="alert" /> {{ msg }}</p>
+      <div class="modal__actions">
+        <button type="button" class="btn btn--ghost" @click="closeImport">{{ imported.length ? '关闭' : '取消' }}</button>
+        <button type="button" class="btn btn--primary" :disabled="!!busy || !importFile" @click="runImport">
+          {{ busy === 'import' ? '正在导入…' : '导入话题' }}
+        </button>
+      </div>
+    </ModalDialog>
   </div>
 </template>
 
@@ -116,7 +155,7 @@ import AppIcon from '../components/ui/AppIcon.vue'
 import ModalDialog from '../components/ui/ModalDialog.vue'
 import { api, type TopicItem } from '../api'
 import type { Lang, Level, Mode } from '../api/models'
-import { setPrefs, store } from '../store'
+import { isAdmin, setPrefs, store } from '../store'
 import { LANG_NAMES, LEVEL_NAMES, MODE_NAMES, dateTime, scoreBand } from '../lib/format'
 
 const MODES: { key: Mode; name: string }[] = [
@@ -140,6 +179,13 @@ export default defineComponent({
     const busyLabel = ref('')
     const waited = ref(0)
     const creating = ref(false)
+    const importing = ref(false)
+    const importFile = ref<File | null>(null)
+    const imported = ref<{ id: string; topic: string; mode: string; title: string; hasNotes: boolean; replaced?: number }[]>([])
+    const importErrors = ref<string[]>([])
+    const importReplaced = ref(0)
+    const prompt = ref('')
+    const copiedPrompt = ref(false)
     const draft = reactive({
       topic: '',
       language: store.prefs.language as Lang,
@@ -174,6 +220,60 @@ export default defineComponent({
       draft.mode = store.prefs.mode
       creating.value = true
       error.value = ''
+    }
+    async function openImport() {
+      importing.value = true
+      importFile.value = null
+      imported.value = []
+      importErrors.value = []
+      importReplaced.value = 0
+      error.value = ''
+      if (!prompt.value) {
+        try { prompt.value = (await api.importPrompt()).prompt } catch (e: any) { error.value = e.message }
+      }
+    }
+    function closeImport() {
+      importing.value = false
+      importFile.value = null
+    }
+    function onImportFile(e: Event) {
+      const input = e.target as HTMLInputElement
+      importFile.value = input.files?.[0] || null
+      imported.value = []
+      importErrors.value = []
+      importReplaced.value = 0
+    }
+    async function copyPrompt() {
+      if (!prompt.value) return
+      try {
+        await navigator.clipboard.writeText(prompt.value)
+      } catch {
+        window.prompt('复制下面的内容：', prompt.value)
+      }
+      copiedPrompt.value = true
+      setTimeout(() => { copiedPrompt.value = false }, 1500)
+    }
+    async function runImport() {
+      if (!importFile.value || busy.value) return
+      error.value = ''
+      importErrors.value = []
+      busy.value = 'import'
+      busyLabel.value = '正在导入话题…'
+      try {
+        const result = await api.importTopics(importFile.value)
+        imported.value = result.imported
+        importErrors.value = result.errors || []
+        importReplaced.value = result.replaced || 0
+        if (result.imported.length) await load()
+        if (result.imported.length === 1 && !result.errors?.length) {
+          closeImport()
+          router.push(`/practice/${result.imported[0].id}`)
+        }
+      } catch (e: any) {
+        error.value = e.message
+      } finally {
+        busy.value = ''
+      }
     }
     function open(t: TopicItem) {
       router.push(`/practice/${t.id}`)
@@ -260,7 +360,9 @@ export default defineComponent({
 
     return {
       items, error, q, filter, filters, shown, busy, busyLabel, waited, creating, draft, modes: MODES,
-      open, openCreate, reuse, regen, remove, create,
+      isAdmin, importing, importFile, imported, importErrors, importReplaced, prompt, copiedPrompt,
+      open, openCreate, openImport, closeImport, onImportFile, copyPrompt, runImport,
+      reuse, regen, remove, create,
       LANG_NAMES, LEVEL_NAMES, MODE_NAMES, dateTime, scoreBand,
     }
   },

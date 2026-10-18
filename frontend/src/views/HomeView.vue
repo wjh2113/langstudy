@@ -170,11 +170,11 @@
       <AppIcon name="info" /> 现在是演示模式：还没有配置网关或大模型，会使用内置示例内容。
     </p>
 
-    <ModalDialog :open="uploadOpen" title="上传资料" icon="doc" @close="closeUpload">
+    <ModalDialog :open="uploadOpen" title="上传资料" icon="doc" wide @close="closeUpload">
       <p class="muted">支持 PDF、PPTX、Word，也可以直接粘贴文字。文字在本地提取，只调用一次模型做归类，原文不会被改写。</p>
       <template v-if="isAdmin">
-        <p class="muted">管理员还可以上传别的模型写好的 <code>.md</code> 或 <code>.zip</code>，导入后直接进练习历史和学习笔记。</p>
-        <details class="upload-prompt" :open="!!prompt">
+        <p class="muted">管理员还可以上传别的模型写好的 <code>.md</code> 或 <code>.zip</code>，导入后直接进练习历史和学习笔记。相同「语言 + 话题 + 级别 + 形式」会覆盖旧练习。</p>
+        <details class="upload-prompt">
           <summary>发给其他模型的说明</summary>
           <textarea class="import-prompt" readonly :value="prompt" rows="10" />
           <button type="button" class="btn btn--outline btn--sm" :disabled="!prompt" @click="copyPrompt">
@@ -189,7 +189,7 @@
       <textarea v-if="!isTopicImport" v-model="paste" class="upload-text" rows="8" maxlength="40000" placeholder="或者把课件文字粘贴在这里" />
       <p v-if="isTopicImport" class="muted">已选 Markdown / 压缩包，点下面会按导入话题处理。</p>
       <p v-if="imported.length && importReplaced" class="banner banner--info">
-        已按「语言 + 级别 + 形式 + 话题」覆盖原先 {{ importReplaced }} 份练习。
+        已按「语言 + 话题 + 级别 + 形式」覆盖原先 {{ importReplaced }} 份练习。
       </p>
       <ul v-if="imported.length" class="import-list">
         <li v-for="item in imported" :key="item.id">

@@ -254,6 +254,7 @@ audio { height: 32px; max-width: 260px; }
 .code-big { font-size: 18px; font-weight: 700; letter-spacing: .06em; }
 .empty { display: grid; justify-items: center; gap: 14px; padding: 48px 24px; text-align: center; color: var(--text-2); }
 .empty .icon { color: var(--text-3); }
+.empty__actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 .chips { display: flex; flex-wrap: wrap; gap: 10px; }
 .chips--center { justify-content: center; }
 .chip {
@@ -805,6 +806,7 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
 .overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 20px; background: rgba(20, 22, 30, .38); backdrop-filter: blur(2px); }
 .overlay--drawer { place-items: stretch end; padding: 0; }
 .modal { width: min(520px, 100%); background: var(--surface); border-radius: 18px; padding: 24px 28px 28px; box-shadow: var(--shadow-lg); display: grid; gap: 12px; }
+.modal--wide { width: min(720px, 100%); }
 .drawer { width: min(500px, calc(100vw - 32px)); height: 100%; overflow: auto; background: var(--surface); padding: 24px 28px; box-shadow: var(--shadow-lg); animation: slide .2s ease-out; }
 @keyframes slide { from { transform: translateX(40px); opacity: .6; } }
 .modal__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
