@@ -9,7 +9,6 @@
         <button type="button" class="btn btn--primary btn--sm" @click="openCreate">
           <AppIcon name="plus" :size="16" /> 新增话题
         </button>
-        <RouterLink to="/" class="btn btn--ghost btn--sm">去首页出新题</RouterLink>
       </div>
     </header>
     <div class="searchrow">
