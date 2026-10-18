@@ -122,8 +122,43 @@ def test_prompt_follows_the_courseware():
     assert "有课件时，以课件为主" in PROMPT
     assert "没有课件时" in PROMPT
     assert "两种都要" in PROMPT
+    assert "每个级别都要生成" in PROMPT
+    assert "10 个语法、20 个句型" in PROMPT
     assert "不要为了凑数去编" in PROMPT
     assert "不要用代码块把全文包起来" in PROMPT
+
+
+def test_notes_keep_the_larger_counts():
+    grammar = "\n".join(f"### 语法{i}\n讲解: 讲解{i}\n例句: Example {i}. | 翻译{i}" for i in range(10))
+    patterns = "\n".join(f"### 句型{i}\n用法: 用法{i}\n例句: Pattern {i}. | 译文{i}" for i in range(12))
+    text = f"""# 点餐
+
+语言: en
+级别: advanced
+形式: questions
+
+## 场景
+
+在餐厅点餐。
+
+## 问题
+
+### What would you like?
+提示: 说菜名。
+
+## 语法
+
+{grammar}
+
+## 句型
+
+{patterns}
+"""
+    ready, errors = parse_documents([text])
+    assert not errors
+    notes = ready[0]["notes"]
+    assert len(notes["grammar"]) == 10
+    assert len(notes["patterns"]) == 12
 
 
 if __name__ == "__main__":

@@ -80,7 +80,7 @@ def normalize(data: dict) -> dict:
     ]
     if not (vocab or grammar or patterns):
         raise LLMError("没有生成学习笔记，请重试")
-    return {"summary": _s(data.get("summary")), "vocabulary": vocab[:20], "grammar": grammar[:8], "patterns": patterns[:8]}
+    return {"summary": _s(data.get("summary")), "vocabulary": vocab[:20], "grammar": grammar[:10], "patterns": patterns[:20]}
 
 
 def generate_notes(content: dict) -> dict:
