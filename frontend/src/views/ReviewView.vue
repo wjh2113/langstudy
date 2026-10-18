@@ -81,20 +81,20 @@
     <template v-else>
       <label class="input input--search review__search"><AppIcon name="search" :size="18" /><input v-model="search" placeholder="搜索" aria-label="搜索" /></label>
       <p v-if="!listItems.length" class="empty card">{{ tab === 'sentence' ? '错句本是空的。报告里改正过的句子会自动加进来。' : '生词本是空的。在学习笔记或报告里点 ☆ 收藏。' }}</p>
-      <div v-else class="card card--flush table-wrap"><table class="table">
+      <div v-else class="card card--flush table-wrap"><table class="table review-list-table">
         <thead><tr><th>{{ tab === 'sentence' ? '正确说法' : '单词 / 句型' }}</th><th>{{ tab === 'sentence' ? '你原来说的' : '意思' }}</th><th>下次复习</th><th /></tr></thead>
         <tbody>
           <tr v-for="c in listItems" :key="c.id">
-            <td>
+            <td :data-label="tab === 'sentence' ? '正确说法' : '单词 / 句型'">
               <span class="cell-front">
                 <PlayButton :id="`list-${c.id}`" :text="c.front" :env="cardEnv" size="sm" />
                 <span :class="cardEnv.textClass">{{ c.front }}</span>
               </span>
               <span v-if="c.reading" class="muted table__title">{{ c.reading }}</span>
             </td>
-            <td :class="tab === 'sentence' ? cardEnv.textClass : ''">{{ tab === 'sentence' ? c.extra : c.meaning }}</td>
-            <td class="nowrap">{{ dueText(c.dueAt) }}</td>
-            <td><button type="button" class="icon-btn icon-btn--danger" aria-label="删除" @click="remove(c)"><AppIcon name="trash" :size="16" /></button></td>
+            <td :data-label="tab === 'sentence' ? '你原来说的' : '意思'" :class="tab === 'sentence' ? cardEnv.textClass : ''">{{ tab === 'sentence' ? c.extra : c.meaning }}</td>
+            <td class="nowrap" data-label="下次复习">{{ dueText(c.dueAt) }}</td>
+            <td data-label=""><button type="button" class="icon-btn icon-btn--danger" aria-label="删除" @click="remove(c)"><AppIcon name="trash" :size="16" /></button></td>
           </tr>
         </tbody>
       </table></div>

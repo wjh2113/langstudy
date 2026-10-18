@@ -55,13 +55,13 @@
             <thead><tr><th>邀请码</th><th>可注册人数</th><th>已注册人数</th><th>有效期</th><th>备注</th><th>状态</th><th>操作</th></tr></thead>
             <tbody>
               <tr v-for="i in invites" :key="i.code">
-                <td><code>{{ i.code }}</code></td>
-                <td>{{ i.maxUses }}</td>
-                <td>{{ i.uses }}<span v-if="i.usedBy" class="muted cell-sub">{{ i.usedBy }}</span></td>
-                <td class="nowrap">{{ i.expiresAt ? dateOnly(i.expiresAt) : '不过期' }}</td>
-                <td>{{ i.note || '—' }}</td>
-                <td><span :class="['status', `status--${STATUS[i.status].cls}`]"><i />{{ STATUS[i.status].name }}</span></td>
-                <td class="nowrap">
+                <td data-label="邀请码"><code>{{ i.code }}</code></td>
+                <td data-label="可注册人数">{{ i.maxUses }}</td>
+                <td data-label="已注册人数">{{ i.uses }}<span v-if="i.usedBy" class="muted cell-sub">{{ i.usedBy }}</span></td>
+                <td class="nowrap" data-label="有效期">{{ i.expiresAt ? dateOnly(i.expiresAt) : '不过期' }}</td>
+                <td data-label="备注">{{ i.note || '—' }}</td>
+                <td data-label="状态"><span :class="['status', `status--${STATUS[i.status].cls}`]"><i />{{ STATUS[i.status].name }}</span></td>
+                <td class="nowrap" data-label="操作">
                   <template v-if="i.status === 'active'">
                     <button type="button" class="btn btn--xs btn--outline" @click="copy(link(i.code), i.code)">{{ copied === i.code ? '已复制' : '复制链接' }}</button>
                     <button type="button" class="btn btn--xs btn--danger-outline" @click="revoke(i.code)">作废</button>
@@ -82,13 +82,13 @@
           <thead><tr><th>用户</th><th>邀请人</th><th>练习次数</th><th>最近练习</th><th>状态</th><th>操作</th></tr></thead>
           <tbody>
             <tr v-for="u in users" :key="u.id">
-              <td><span class="user-cell"><span class="avatar avatar--sm">{{ u.username.slice(0, 1).toUpperCase() }}</span>
+              <td data-label="用户"><span class="user-cell"><span class="avatar avatar--sm">{{ u.username.slice(0, 1).toUpperCase() }}</span>
                 <strong>{{ u.username }}</strong><span class="muted">{{ u.role === 'admin' ? '管理员' : '普通用户' }}{{ u.id === me?.id ? '（你）' : '' }}</span></span></td>
-              <td>{{ u.invitedBy || '—' }}</td>
-              <td>{{ u.practiceCount }}</td>
-              <td class="nowrap">{{ u.lastPracticeAt ? dateTime(u.lastPracticeAt) : '—' }}</td>
-              <td><span :class="['status', u.disabled ? 'status--warn' : 'status--ok']"><i />{{ u.disabled ? '已停用' : '正常' }}</span></td>
-              <td class="nowrap">
+              <td data-label="邀请人">{{ u.invitedBy || '—' }}</td>
+              <td data-label="练习次数">{{ u.practiceCount }}</td>
+              <td class="nowrap" data-label="最近练习">{{ u.lastPracticeAt ? dateTime(u.lastPracticeAt) : '—' }}</td>
+              <td data-label="状态"><span :class="['status', u.disabled ? 'status--warn' : 'status--ok']"><i />{{ u.disabled ? '已停用' : '正常' }}</span></td>
+              <td class="nowrap" data-label="操作">
                 <template v-if="u.id !== me?.id">
                   <button type="button" class="btn btn--xs btn--outline" @click="toggle(u)">{{ u.disabled ? '启用' : '停用' }}</button>
                   <button type="button" class="btn btn--xs btn--ghost" @click="reset(u)">重置密码</button>
@@ -115,8 +115,12 @@
             <thead><tr><th>用户</th><th>今天调用</th><th>今天积分</th><th>{{ usage.days }} 天调用</th><th>Tokens</th><th>积分</th></tr></thead>
             <tbody>
               <tr v-for="u in usage.users" :key="u.id">
-                <td><strong>{{ u.username }}</strong></td><td>{{ u.callsToday }}</td><td>{{ fmtCredits(u.creditsToday) }}</td>
-                <td>{{ u.calls }}</td><td>{{ u.tokens.toLocaleString() }}</td><td>{{ fmtCredits(u.credits) }}</td>
+                <td data-label="用户"><strong>{{ u.username }}</strong></td>
+                <td data-label="今天调用">{{ u.callsToday }}</td>
+                <td data-label="今天积分">{{ fmtCredits(u.creditsToday) }}</td>
+                <td :data-label="`${usage.days} 天调用`">{{ u.calls }}</td>
+                <td data-label="Tokens">{{ u.tokens.toLocaleString() }}</td>
+                <td data-label="积分">{{ fmtCredits(u.credits) }}</td>
               </tr>
             </tbody>
           </table>

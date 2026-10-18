@@ -74,24 +74,24 @@
             <tbody>
               <template v-for="(it, i) in report.items" :key="i">
                 <tr :class="{ open: openItem === i }">
-                  <td class="muted">{{ i + 1 }}</td>
-                  <td>
+                  <td class="muted" data-label="#">{{ i + 1 }}</td>
+                  <td data-label="你说的">
                     <span class="tag tag--sm">{{ it.kind === 'dictation' ? '填空' : it.followUp ? '追问' : KINDS[it.kind] || '作答' }}</span>
                     <span :class="env.textClass">{{ it.answer || '（没填）' }}</span>
                   </td>
-                  <td :class="env.textClass">
+                  <td data-label="修改后" :class="env.textClass">
                     <template v-if="it.kind === 'dictation'"><span :class="it.correct ? 'ok-text' : 'bad-text'">{{ it.correct ? '✓ 正确' : it.reference }}</span></template>
                     <template v-else-if="it.corrected && it.corrected !== it.answer">{{ it.corrected }}</template>
                     <span v-else-if="it.ok || it.kind === 'shadow'" class="ok-text">✓ 没问题</span>
                   </td>
-                  <td :class="env.textClass">{{ it.better }}</td>
-                  <td><PlayButton v-if="standardOf(it)" :id="`std-${i}`" :text="standardOf(it)" :env="env" size="sm" /></td>
-                  <td><button type="button" class="icon-btn" :aria-expanded="openItem === i" aria-label="详情" @click="openItem = openItem === i ? -1 : i">
+                  <td data-label="更地道的说法" :class="env.textClass">{{ it.better }}</td>
+                  <td data-label="试听"><PlayButton v-if="standardOf(it)" :id="`std-${i}`" :text="standardOf(it)" :env="env" size="sm" /></td>
+                  <td data-label=""><button type="button" class="icon-btn" :aria-expanded="openItem === i" aria-label="详情" @click="openItem = openItem === i ? -1 : i">
                     <AppIcon :name="openItem === i ? 'chevron-up' : 'chevron-down'" :size="16" /></button></td>
                 </tr>
                 <tr v-if="openItem === i" class="review-table__detail">
-                  <td />
-                  <td colspan="5">
+                  <td data-label="" />
+                  <td colspan="5" data-label="">
                     <p v-if="it.prompt" :class="['muted', env.textClass]">{{ it.kind === 'dictation' ? '原句' : '题目' }}：{{ it.prompt }}</p>
                     <DiffText v-if="it.diff" :tokens="it.diff" :env="env" />
                     <div class="metric-tags">
