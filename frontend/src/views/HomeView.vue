@@ -26,7 +26,7 @@
         <span class="muted">{{ waited }} 秒</span>
       </div>
       <div class="bar"><span :style="{ width: `${Math.min(95, waited * 4)}%` }" /></div>
-      <p class="muted">{{ pasting && isTopicImport ? '正在导入话题…' : uploadOpen || pasting ? '正在本地提取文字，并整理成课程包…' : '一般需要 10–30 秒，生成好会自动进入练习。' }}</p>
+      <p class="muted">{{ pasting && topicImportBusy ? '正在导入话题…' : uploadOpen || pasting ? '正在本地提取文字，并整理成课程包…' : '一般需要 10–30 秒，生成好会自动进入练习。' }}</p>
     </div>
     <p v-if="error" class="banner banner--error"><AppIcon name="alert" /> {{ error }}</p>
 
@@ -170,43 +170,14 @@
       <AppIcon name="info" /> 现在是演示模式：还没有配置网关或大模型，会使用内置示例内容。
     </p>
 
-    <ModalDialog :open="uploadOpen" title="上传资料" icon="doc" wide @close="closeUpload">
-      <p class="muted">支持 PDF、PPTX、Word，也可以直接粘贴文字。文字在本地提取，只调用一次模型做归类，原文不会被改写。</p>
-      <template v-if="isAdmin">
-        <p class="muted">管理员还可以上传别的模型写好的 <code>.md</code> 或 <code>.zip</code>，导入后直接进练习历史和学习笔记。相同「语言 + 话题 + 级别 + 形式」会覆盖旧练习。</p>
-        <details class="upload-prompt">
-          <summary>发给其他模型的说明</summary>
-          <textarea class="import-prompt" readonly :value="prompt" rows="10" />
-          <button type="button" class="btn btn--outline btn--sm" :disabled="!prompt" @click="copyPrompt">
-            <AppIcon name="copy" :size="14" /> {{ copiedPrompt ? '已复制' : '复制说明' }}
-          </button>
-        </details>
-      </template>
-      <label class="upload-pick">
-        <input type="file" :accept="uploadAccept" :disabled="busy" @change="onFile" />
-        <span>{{ file ? file.name : (isAdmin ? '选择 PDF、PPTX、DOCX、.md 或 .zip' : '选择 PDF、PPTX 或 DOCX') }}</span>
-      </label>
-      <textarea v-if="!isTopicImport" v-model="paste" class="upload-text" rows="8" maxlength="40000" placeholder="或者把课件文字粘贴在这里" />
-      <p v-if="isTopicImport" class="muted">已选 Markdown / 压缩包，点下面会按导入话题处理。</p>
-      <p v-if="imported.length && importReplaced" class="banner banner--info">
-        已按「语言 + 话题 + 级别 + 形式」覆盖原先 {{ importReplaced }} 份练习。
-      </p>
-      <ul v-if="imported.length" class="import-list">
-        <li v-for="item in imported" :key="item.id">
-          <RouterLink :to="`/practice/${item.id}`" @click="closeUpload">{{ item.topic }}</RouterLink>
-          <span class="tag tag--mode">{{ MODE_NAMES[item.mode] || item.mode }}</span>
-          <span v-if="item.hasNotes" class="muted">含学习笔记</span>
-          <span v-if="item.replaced" class="muted">已覆盖 {{ item.replaced }} 份</span>
-        </li>
-      </ul>
-      <p v-for="(msg, i) in importErrors" :key="'ie'+i" class="banner banner--error"><AppIcon name="alert" /> {{ msg }}</p>
-      <div class="modal__actions">
-        <button type="button" class="btn btn--ghost" @click="closeUpload">{{ imported.length ? '关闭' : '取消' }}</button>
-        <button type="button" class="btn btn--primary" :disabled="busy || (!file && !paste.trim())" @click="upload">
-          {{ isTopicImport ? (busy ? '正在导入…' : '导入话题') : '整理成课程包' }}
-        </button>
-      </div>
-    </ModalDialog>
+    <UploadMaterialsDialog
+      :open="uploadOpen"
+      @close="uploadOpen = false"
+      @reopen="uploadOpen = true"
+      @error="(m) => (error = m)"
+      @imported="onImported"
+      @busy="onUploadBusy"
+    />
 
     <ModalDialog :open="!!reuse" title="这个话题练过了" icon="history" @close="reuse = null">
       <p v-if="reuse">上次练习「{{ reuse.title }}」是在 {{ dateTime(reuse.createdAt) }}<template v-if="reuse.done">，得了 {{ reuse.overall ?? '—' }} 分</template>。</p>
@@ -229,10 +200,11 @@ import ModalDialog from '../components/ui/ModalDialog.vue'
 import RegionIcon from '../components/ui/RegionIcon.vue'
 import SegControl from '../components/ui/SegControl.vue'
 import ToggleSwitch from '../components/ui/ToggleSwitch.vue'
+import UploadMaterialsDialog from '../components/UploadMaterialsDialog.vue'
 import { api, type SessionSummary } from '../api'
 import type { Accent, Coach, Level, Mode } from '../api/models'
 import type { PreviousSession } from '../api/types.gen'
-import { isAdmin, setAccent, setPrefs, store } from '../store'
+import { setAccent, setPrefs, store } from '../store'
 import { LANG_NAMES, LEVEL_NAMES, MODE_NAMES, dateTime } from '../lib/format'
 
 const OptHead = (props: { icon: string; title: string; sub: string }) => h('div', { class: 'opt__head' }, [
@@ -256,7 +228,7 @@ const SUGGESTIONS: Record<string, string[]> = {
 
 export default defineComponent({
   name: 'HomeView',
-  components: { AccentSelect, AppIcon, FlagIcon, ModalDialog, OptHead, RegionIcon, SegControl, ToggleSwitch },
+  components: { AccentSelect, AppIcon, FlagIcon, ModalDialog, OptHead, RegionIcon, SegControl, ToggleSwitch, UploadMaterialsDialog },
   setup() {
     const router = useRouter()
     const prefs = store.prefs
@@ -266,20 +238,9 @@ export default defineComponent({
     const error = ref('')
     const reuse = ref<PreviousSession | null>(null)
     const uploadOpen = ref(false)
-    const file = ref<File | null>(null)
-    const paste = ref('')
     const pasting = ref(false)
-    const prompt = ref('')
-    const copiedPrompt = ref(false)
-    const imported = ref<{ id: string; topic: string; mode: string; title: string; hasNotes: boolean; replaced?: number }[]>([])
-    const importErrors = ref<string[]>([])
-    const importReplaced = ref(0)
+    const topicImportBusy = ref(false)
     let pending: Record<string, any> | null = null
-
-    const isTopicImport = computed(() => !!file.value && /\.(md|markdown|txt|zip)$/i.test(file.value.name))
-    const uploadAccept = computed(() => isAdmin.value
-      ? '.pdf,.pptx,.docx,.md,.markdown,.txt,.zip,application/pdf,text/markdown,application/zip'
-      : '.pdf,.pptx,.docx,application/pdf')
 
     const languages = computed(() => store.config?.languages || [])
     const meta = computed(() => languages.value.find((l) => l.code === prefs.language))
@@ -507,99 +468,31 @@ export default defineComponent({
     const drill = () => coach.value?.weakest &&
       generate({ language: prefs.language, level: prefs.level, mode: '', topic: '', count: prefs.count, focus: coach.value.weakest.key })
 
-    function onFile(e: Event) {
-      const input = e.target as HTMLInputElement
-      file.value = input.files?.[0] || null
-      imported.value = []
-      importErrors.value = []
-      importReplaced.value = 0
-    }
-
-    function closeUpload() {
-      uploadOpen.value = false
-      file.value = null
-      paste.value = ''
-      imported.value = []
-      importErrors.value = []
-      importReplaced.value = 0
-    }
-
-    async function openUpload() {
+    function openUpload() {
       uploadOpen.value = true
-      imported.value = []
-      importErrors.value = []
-      importReplaced.value = 0
-      if (isAdmin.value && !prompt.value) {
-        try { prompt.value = (await api.importPrompt()).prompt } catch (e: any) { error.value = e.message }
-      }
-    }
-
-    async function copyPrompt() {
-      if (!prompt.value) return
-      try {
-        await navigator.clipboard.writeText(prompt.value)
-      } catch {
-        window.prompt('复制下面的内容：', prompt.value)
-      }
-      copiedPrompt.value = true
-      setTimeout(() => { copiedPrompt.value = false }, 1500)
-    }
-
-    async function upload() {
-      if (busy.value || (!file.value && !paste.value.trim())) return
       error.value = ''
-      importErrors.value = []
-      if (isTopicImport.value) {
-        if (!isAdmin.value) {
-          error.value = '只有管理员可以导入 Markdown 话题'
-          return
-        }
-        pasting.value = true
+    }
+
+    function onUploadBusy(p: { on: boolean; topicImport?: boolean; waited?: number }) {
+      if (p.on) {
         busy.value = true
-        waited.value = 0
-        try {
-          const result = await api.importTopics(file.value!)
-          imported.value = result.imported
-          importErrors.value = result.errors || []
-          importReplaced.value = result.replaced || 0
-          if (result.imported.length) await loadPicks(result.imported[0].id)
-          if (result.imported.length === 1 && !result.errors?.length) {
-            closeUpload()
-            router.push(`/practice/${result.imported[0].id}`)
-          }
-        } catch (e: any) {
-          error.value = e.message
-        } finally {
-          busy.value = false
-          pasting.value = false
-        }
-        return
-      }
-      const form = new FormData()
-      form.set('language', prefs.language)
-      form.set('level', prefs.level)
-      if (file.value) form.set('file', file.value)
-      if (paste.value.trim()) form.set('text', paste.value.trim())
-      pasting.value = true
-      uploadOpen.value = false
-      busy.value = true
-      waited.value = 0
-      try {
-        const res = await api.courseUpload(form, (s) => (waited.value = s))
-        router.push(`/course/${res.id}`)
-      } catch (e: any) {
-        error.value = e.message
-        uploadOpen.value = true
-      } finally {
+        pasting.value = true
+        topicImportBusy.value = !!p.topicImport
+        waited.value = typeof p.waited === 'number' ? p.waited : 0
+      } else {
         busy.value = false
         pasting.value = false
+        topicImportBusy.value = false
       }
+    }
+
+    async function onImported(result: { imported: { id: string }[] }) {
+      if (result.imported?.length) await loadPicks(result.imported[0].id)
     }
 
     return {
-      store, prefs, topic, busy, waited, error, reuse, uploadOpen, file, paste, pasting, onFile, upload,
-      closeUpload, openUpload, isAdmin, isTopicImport, uploadAccept, prompt, copiedPrompt, copyPrompt,
-      imported, importErrors, importReplaced,
+      store, prefs, topic, busy, waited, error, reuse, uploadOpen, pasting, topicImportBusy,
+      openUpload, onUploadBusy, onImported,
       languages, levelOptions, regions, accentKey, currentAccent, currentRegion,
       regionAccents, pickRegion, hasCount, countHint, coach, autoApplied,
       picks, selectedId, selected, opening, pickOpen, pickQuery, pickActive, filteredPicks,

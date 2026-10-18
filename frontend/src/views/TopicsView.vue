@@ -3,79 +3,122 @@
     <header class="page-head">
       <h1>话题管理</h1>
       <div class="page-head__actions">
-        <button v-if="isAdmin" type="button" class="btn btn--outline btn--sm" :disabled="!!busy" @click="openImport">
-          <AppIcon name="doc" :size="16" /> 导入
+        <button type="button" class="btn btn--outline btn--sm" :disabled="!!busy" @click="openUpload">
+          <AppIcon name="doc" :size="16" /> 上传资料
         </button>
         <button type="button" class="btn btn--primary btn--sm" @click="openCreate">
           <AppIcon name="plus" :size="16" /> 新增话题
         </button>
       </div>
     </header>
-    <div class="searchrow">
+
+    <div class="topics-toolbar">
       <label class="input input--search"><AppIcon name="search" :size="18" />
         <input v-model="q" placeholder="搜索话题、标题…" aria-label="搜索话题" /></label>
+      <p class="topics-toolbar__meta muted">
+        显示 {{ flatShown.length }} / {{ items?.length || 0 }}
+        <button v-if="hasActiveFilters" type="button" class="btn btn--ghost btn--sm" @click="clearFilters">清除筛选</button>
+      </p>
     </div>
-    <div class="chips">
-      <button v-for="f in filters" :key="f.key" type="button" :class="['chip', { on: filter === f.key }]" @click="filter = f.key">{{ f.label }}</button>
+
+    <div class="topics-filters">
+      <div class="topics-filters__row">
+        <span class="topics-filters__label">语言</span>
+        <div class="chips">
+          <button type="button" :class="['chip', { on: !lang }]" @click="lang = ''">全部</button>
+          <button type="button" :class="['chip', { on: lang === 'en' }]" @click="lang = 'en'">英语</button>
+          <button type="button" :class="['chip', { on: lang === 'ja' }]" @click="lang = 'ja'">日语</button>
+        </div>
+      </div>
+      <div class="topics-filters__row">
+        <span class="topics-filters__label">级别</span>
+        <div class="chips">
+          <button type="button" :class="['chip', { on: !level }]" @click="level = ''">全部</button>
+          <button v-for="l in levels" :key="l.key" type="button" :class="['chip', { on: level === l.key }]" @click="level = l.key">{{ l.label }}</button>
+        </div>
+      </div>
+      <div class="topics-filters__row">
+        <span class="topics-filters__label">形式</span>
+        <div class="chips">
+          <button type="button" :class="['chip', { on: !mode }]" @click="mode = ''">全部</button>
+          <button v-for="m in modes" :key="m.key" type="button" :class="['chip', { on: mode === m.key }]" @click="mode = m.key">{{ m.name }}</button>
+        </div>
+      </div>
+      <div class="topics-filters__row">
+        <span class="topics-filters__label">状态</span>
+        <div class="chips">
+          <button type="button" :class="['chip', { on: !status }]" @click="status = ''">全部</button>
+          <button type="button" :class="['chip', { on: status === 'todo' }]" @click="status = 'todo'">未开始</button>
+          <button type="button" :class="['chip', { on: status === 'progress' }]" @click="status = 'progress'">未完成</button>
+          <button type="button" :class="['chip', { on: status === 'done' }]" @click="status = 'done'">已完成</button>
+        </div>
+      </div>
     </div>
+
     <p v-if="error" class="banner banner--error"><AppIcon name="alert" /> {{ error }}</p>
     <p v-if="busy" class="banner banner--info"><span class="spinner" /> {{ busyLabel }} {{ waited ? waited + ' 秒' : '' }}</p>
 
-    <div v-if="items && !shown.length" class="empty card">
+    <div v-if="items && !flatShown.length" class="empty card">
       <AppIcon name="list" :size="32" />
-      <p v-if="items.length">没有符合条件的话题。</p>
-      <p v-else>还没有话题。点「新增话题」生成练习<template v-if="isAdmin">，或点「导入」上传 Markdown</template>。</p>
+      <p v-if="items.length">没有符合条件的话题。试试清除筛选或换个关键词。</p>
+      <p v-else>还没有话题。点「新增话题」生成练习，或点「上传资料」导入。</p>
       <div class="empty__actions">
-        <button v-if="isAdmin" type="button" class="btn btn--outline" @click="openImport">导入</button>
+        <button type="button" class="btn btn--outline" @click="openUpload">上传资料</button>
         <button type="button" class="btn btn--primary" @click="openCreate">新增话题</button>
       </div>
     </div>
 
-    <section v-if="shown.length" class="card card--flush">
-      <div class="table-wrap">
-        <table class="table topics-table">
-          <thead>
-            <tr>
-              <th><AppIcon name="chat" :size="16" /> 话题</th>
-              <th><AppIcon name="globe" :size="16" /> 语言</th>
-              <th><AppIcon name="bars" :size="16" /> 级别</th>
-              <th><AppIcon name="doc" :size="16" /> 形式</th>
-              <th><AppIcon name="clock" :size="16" /> 最近</th>
-              <th><AppIcon name="list" :size="16" /> 次数</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="t in shown" :key="t.id">
-              <td class="topics-table__topic">
-                <strong>{{ t.topic }}</strong>
-                <span class="muted">{{ t.title }}</span>
-                <span v-if="!t.done && (t.answered || 0) > 0" class="tag tag--warn tag--sm">未完成 · 已答 {{ t.answered }}</span>
-                <span v-else-if="!t.done" class="tag tag--sm">未开始</span>
-                <span v-else-if="t.overall != null" :class="['score-text', scoreBand(t.overall)]">{{ t.overall }} 分</span>
-              </td>
-              <td><span :class="['tag', `tag--${t.language}`]">{{ LANG_NAMES[t.language || 'en'] }}</span></td>
-              <td>{{ LEVEL_NAMES[t.level || ''] || t.level || '—' }}</td>
-              <td><span class="tag tag--mode">{{ MODE_NAMES[t.mode] || t.mode }}</span></td>
-              <td class="nowrap">{{ dateTime(t.updatedAt || t.createdAt) }}</td>
-              <td>{{ t.attempts }}</td>
-              <td class="topics-table__actions">
-                <button v-if="!t.done" type="button" class="btn btn--sm btn--primary" :disabled="!!busy" @click="open(t)">
-                  {{ (t.answered || 0) > 0 ? '继续' : '开始' }}
-                </button>
-                <button v-else type="button" class="btn btn--sm btn--outline" :disabled="!!busy" @click="reuse(t)">用上次的题</button>
-                <button type="button" class="btn btn--sm btn--ghost" :disabled="!!busy" @click="regen(t)">
-                  <AppIcon name="refresh" :size="14" /> 重新生成
-                </button>
-                <button type="button" class="btn btn--sm btn--ghost" :disabled="!!busy" @click="remove(t)">
-                  <AppIcon name="trash" :size="14" /> 删除
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <div v-if="groups.length" class="topics-groups">
+      <section v-for="g in groups" :key="g.key" class="card card--flush topics-group">
+        <button type="button" class="topics-group__head" @click="toggleGroup(g.key)">
+          <AppIcon :name="collapsed[g.key] ? 'chevron-right' : 'chevron-down'" :size="18" />
+          <strong>{{ g.topic }}</strong>
+          <span class="muted">{{ g.items.length }} 种</span>
+        </button>
+        <div v-show="!collapsed[g.key]" class="table-wrap">
+          <table class="table topics-table">
+            <thead>
+              <tr>
+                <th><AppIcon name="globe" :size="16" /> 语言</th>
+                <th><AppIcon name="bars" :size="16" /> 级别</th>
+                <th><AppIcon name="doc" :size="16" /> 形式</th>
+                <th>状态</th>
+                <th><AppIcon name="clock" :size="16" /> 最近</th>
+                <th><AppIcon name="list" :size="16" /> 次数</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="t in g.items" :key="t.id">
+                <td><span :class="['tag', `tag--${t.language}`]">{{ LANG_NAMES[t.language || 'en'] }}</span></td>
+                <td>{{ LEVEL_NAMES[t.level || ''] || t.level || '—' }}</td>
+                <td><span class="tag tag--mode">{{ MODE_NAMES[t.mode] || t.mode }}</span></td>
+                <td>
+                  <span v-if="!t.done && (t.answered || 0) > 0" class="tag tag--warn tag--sm">未完成 · 已答 {{ t.answered }}</span>
+                  <span v-else-if="!t.done" class="tag tag--sm">未开始</span>
+                  <span v-else-if="t.overall != null" :class="['score-text', scoreBand(t.overall)]">{{ t.overall }} 分</span>
+                  <span v-else class="tag tag--sm">已完成</span>
+                </td>
+                <td class="nowrap">{{ dateTime(t.updatedAt || t.createdAt) }}</td>
+                <td>{{ t.attempts }}</td>
+                <td class="topics-table__actions">
+                  <button v-if="!t.done" type="button" class="btn btn--sm btn--primary" :disabled="!!busy" @click="open(t)">
+                    {{ (t.answered || 0) > 0 ? '继续' : '开始' }}
+                  </button>
+                  <button v-else type="button" class="btn btn--sm btn--outline" :disabled="!!busy" @click="reuse(t)">用上次的题</button>
+                  <button type="button" class="btn btn--sm btn--ghost" :disabled="!!busy" @click="regen(t)">
+                    <AppIcon name="refresh" :size="14" /> 重新生成
+                  </button>
+                  <button type="button" class="btn btn--sm btn--ghost" :disabled="!!busy" @click="remove(t)">
+                    <AppIcon name="trash" :size="14" /> 删除
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
 
     <ModalDialog :open="creating" title="新增话题" icon="plus" @close="creating = false">
       <form class="topic-create" @submit.prevent="create">
@@ -112,38 +155,14 @@
       </form>
     </ModalDialog>
 
-    <ModalDialog :open="importing" title="导入话题" icon="doc" wide @close="closeImport">
-      <p class="muted">上传别的模型写好的 <code>.md</code> 或 <code>.zip</code>。相同「语言 + 话题 + 级别 + 形式」会覆盖旧练习。</p>
-      <details class="upload-prompt">
-        <summary>发给其他模型的说明</summary>
-        <textarea class="import-prompt" readonly :value="prompt" rows="10" />
-        <button type="button" class="btn btn--outline btn--sm" :disabled="!prompt" @click="copyPrompt">
-          <AppIcon name="copy" :size="14" /> {{ copiedPrompt ? '已复制' : '复制说明' }}
-        </button>
-      </details>
-      <label class="upload-pick">
-        <input type="file" accept=".md,.zip,text/markdown,application/zip" :disabled="!!busy" @change="onImportFile" />
-        <span>{{ importFile ? importFile.name : '选择 .md 或 .zip' }}</span>
-      </label>
-      <p v-if="imported.length && importReplaced" class="banner banner--info">
-        已按「语言 + 话题 + 级别 + 形式」覆盖原先 {{ importReplaced }} 份练习。
-      </p>
-      <ul v-if="imported.length" class="import-list">
-        <li v-for="item in imported" :key="item.id">
-          <RouterLink :to="`/practice/${item.id}`" @click="closeImport">{{ item.topic }}</RouterLink>
-          <span class="tag tag--mode">{{ MODE_NAMES[item.mode] || item.mode }}</span>
-          <span v-if="item.hasNotes" class="muted">含学习笔记</span>
-          <span v-if="item.replaced" class="muted">已覆盖 {{ item.replaced }} 份</span>
-        </li>
-      </ul>
-      <p v-for="(msg, i) in importErrors" :key="'ie'+i" class="banner banner--error"><AppIcon name="alert" /> {{ msg }}</p>
-      <div class="modal__actions">
-        <button type="button" class="btn btn--ghost" @click="closeImport">{{ imported.length ? '关闭' : '取消' }}</button>
-        <button type="button" class="btn btn--primary" :disabled="!!busy || !importFile" @click="runImport">
-          {{ busy === 'import' ? '正在导入…' : '导入话题' }}
-        </button>
-      </div>
-    </ModalDialog>
+    <UploadMaterialsDialog
+      :open="uploadOpen"
+      @close="uploadOpen = false"
+      @reopen="uploadOpen = true"
+      @error="(m) => (error = m)"
+      @imported="onImported"
+      @busy="onUploadBusy"
+    />
   </div>
 </template>
 
@@ -152,9 +171,10 @@ import { computed, defineComponent, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppIcon from '../components/ui/AppIcon.vue'
 import ModalDialog from '../components/ui/ModalDialog.vue'
+import UploadMaterialsDialog from '../components/UploadMaterialsDialog.vue'
 import { api, type TopicItem } from '../api'
 import type { Lang, Level, Mode } from '../api/models'
-import { isAdmin, setPrefs, store } from '../store'
+import { setPrefs, store } from '../store'
 import { LANG_NAMES, LEVEL_NAMES, MODE_NAMES, dateTime, scoreBand } from '../lib/format'
 
 const MODES: { key: Mode; name: string }[] = [
@@ -165,26 +185,38 @@ const MODES: { key: Mode; name: string }[] = [
   { key: 'dictation', name: '精听填空' },
 ]
 
+const LEVELS = [
+  { key: 'beginner', label: '入门' },
+  { key: 'intermediate', label: '中级' },
+  { key: 'advanced', label: '高级' },
+]
+
+type StatusFilter = '' | 'todo' | 'progress' | 'done'
+
+function topicStatus(t: TopicItem): StatusFilter {
+  if (t.done) return 'done'
+  if ((t.answered || 0) > 0) return 'progress'
+  return 'todo'
+}
+
 export default defineComponent({
   name: 'TopicsView',
-  components: { AppIcon, ModalDialog },
+  components: { AppIcon, ModalDialog, UploadMaterialsDialog },
   setup() {
     const router = useRouter()
     const items = ref<TopicItem[] | null>(null)
     const error = ref('')
     const q = ref('')
-    const filter = ref('all')
+    const lang = ref('')
+    const level = ref('')
+    const mode = ref('')
+    const status = ref<StatusFilter>('')
     const busy = ref('')
     const busyLabel = ref('')
     const waited = ref(0)
     const creating = ref(false)
-    const importing = ref(false)
-    const importFile = ref<File | null>(null)
-    const imported = ref<{ id: string; topic: string; mode: string; title: string; hasNotes: boolean; replaced?: number }[]>([])
-    const importErrors = ref<string[]>([])
-    const importReplaced = ref(0)
-    const prompt = ref('')
-    const copiedPrompt = ref(false)
+    const uploadOpen = ref(false)
+    const collapsed = reactive<Record<string, boolean>>({})
     const draft = reactive({
       topic: '',
       language: store.prefs.language as Lang,
@@ -195,22 +227,50 @@ export default defineComponent({
     const load = () => api.topics().then((r) => (items.value = r)).catch((e) => (error.value = e.message))
     onMounted(load)
 
-    const filters = computed(() => {
-      const modes = [...new Set((items.value || []).map((t) => t.mode).filter(Boolean))] as string[]
-      return [
-        { key: 'all', label: '全部' },
-        { key: 'en', label: '英语' },
-        { key: 'ja', label: '日语' },
-        ...modes.map((m) => ({ key: `m:${m}`, label: (MODE_NAMES as Record<string, string>)[m] || m })),
-      ]
-    })
-    const shown = computed(() => (items.value || []).filter((t) => {
-      const f = filter.value
-      if (f === 'en' || f === 'ja') { if (t.language !== f) return false }
-      else if (f.startsWith('m:') && t.mode !== f.slice(2)) return false
+    const hasActiveFilters = computed(() => !!(q.value.trim() || lang.value || level.value || mode.value || status.value))
+
+    const flatShown = computed(() => {
       const needle = q.value.trim().toLowerCase()
-      return !needle || [t.topic, t.title].some((x) => (x || '').toLowerCase().includes(needle))
-    }))
+      return (items.value || []).filter((t) => {
+        if (lang.value && t.language !== lang.value) return false
+        if (level.value && t.level !== level.value) return false
+        if (mode.value && t.mode !== mode.value) return false
+        if (status.value && topicStatus(t) !== status.value) return false
+        if (!needle) return true
+        return [t.topic, t.title].some((x) => (x || '').toLowerCase().includes(needle))
+      })
+    })
+
+    const groups = computed(() => {
+      const map = new Map<string, TopicItem[]>()
+      for (const t of flatShown.value) {
+        const key = (t.topic || t.title || '未命名').trim() || '未命名'
+        const list = map.get(key) || []
+        list.push(t)
+        map.set(key, list)
+      }
+      return [...map.entries()].map(([topic, list]) => ({
+        key: topic,
+        topic,
+        items: list.slice().sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt))),
+      })).sort((a, b) => {
+        const at = a.items[0]?.updatedAt || a.items[0]?.createdAt || ''
+        const bt = b.items[0]?.updatedAt || b.items[0]?.createdAt || ''
+        return String(bt).localeCompare(String(at))
+      })
+    })
+
+    function clearFilters() {
+      q.value = ''
+      lang.value = ''
+      level.value = ''
+      mode.value = ''
+      status.value = ''
+    }
+
+    function toggleGroup(key: string) {
+      collapsed[key] = !collapsed[key]
+    }
 
     function openCreate() {
       draft.topic = ''
@@ -220,60 +280,27 @@ export default defineComponent({
       creating.value = true
       error.value = ''
     }
-    async function openImport() {
-      importing.value = true
-      importFile.value = null
-      imported.value = []
-      importErrors.value = []
-      importReplaced.value = 0
+
+    function openUpload() {
+      uploadOpen.value = true
       error.value = ''
-      if (!prompt.value) {
-        try { prompt.value = (await api.importPrompt()).prompt } catch (e: any) { error.value = e.message }
-      }
     }
-    function closeImport() {
-      importing.value = false
-      importFile.value = null
-    }
-    function onImportFile(e: Event) {
-      const input = e.target as HTMLInputElement
-      importFile.value = input.files?.[0] || null
-      imported.value = []
-      importErrors.value = []
-      importReplaced.value = 0
-    }
-    async function copyPrompt() {
-      if (!prompt.value) return
-      try {
-        await navigator.clipboard.writeText(prompt.value)
-      } catch {
-        window.prompt('复制下面的内容：', prompt.value)
-      }
-      copiedPrompt.value = true
-      setTimeout(() => { copiedPrompt.value = false }, 1500)
-    }
-    async function runImport() {
-      if (!importFile.value || busy.value) return
-      error.value = ''
-      importErrors.value = []
-      busy.value = 'import'
-      busyLabel.value = '正在导入话题…'
-      try {
-        const result = await api.importTopics(importFile.value)
-        imported.value = result.imported
-        importErrors.value = result.errors || []
-        importReplaced.value = result.replaced || 0
-        if (result.imported.length) await load()
-        if (result.imported.length === 1 && !result.errors?.length) {
-          closeImport()
-          router.push(`/practice/${result.imported[0].id}`)
-        }
-      } catch (e: any) {
-        error.value = e.message
-      } finally {
+
+    function onUploadBusy(p: { on: boolean; topicImport?: boolean; waited?: number }) {
+      if (p.on) {
+        busy.value = 'upload'
+        busyLabel.value = p.topicImport ? '正在导入话题…' : '正在整理课程包…'
+        waited.value = typeof p.waited === 'number' ? p.waited : 0
+      } else {
         busy.value = ''
+        busyLabel.value = ''
       }
     }
+
+    async function onImported() {
+      await load()
+    }
+
     function open(t: TopicItem) {
       router.push(`/practice/${t.id}`)
     }
@@ -358,10 +385,10 @@ export default defineComponent({
     }
 
     return {
-      items, error, q, filter, filters, shown, busy, busyLabel, waited, creating, draft, modes: MODES,
-      isAdmin, importing, importFile, imported, importErrors, importReplaced, prompt, copiedPrompt,
-      open, openCreate, openImport, closeImport, onImportFile, copyPrompt, runImport,
-      reuse, regen, remove, create,
+      items, error, q, lang, level, mode, status, levels: LEVELS, modes: MODES,
+      flatShown, groups, collapsed, hasActiveFilters, clearFilters, toggleGroup,
+      busy, busyLabel, waited, creating, uploadOpen, draft,
+      open, openCreate, openUpload, onUploadBusy, onImported, reuse, regen, remove, create,
       LANG_NAMES, LEVEL_NAMES, MODE_NAMES, dateTime, scoreBand,
     }
   },
