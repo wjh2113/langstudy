@@ -30,17 +30,23 @@
     </div>
     <p v-if="error" class="banner banner--error"><AppIcon name="alert" /> {{ error }}</p>
 
-    <section v-if="unfinished.length" class="resume">
-      <h2 class="section-title"><AppIcon name="history" /> 继续上次的练习</h2>
-      <div class="resume__list">
-        <RouterLink v-for="s in unfinished" :key="s.id" :to="`/practice/${s.id}`" class="resume__item">
-          <span :class="['tag', `tag--${s.language}`]">{{ LANG_NAMES[s.language || 'en'] }}</span>
-          <span class="tag tag--mode">{{ MODE_NAMES[s.mode] }}</span>
-          <strong>{{ s.topic }}</strong>
-          <span class="muted">已答 {{ s.answered }} 条 · {{ dateTime(s.updatedAt || s.createdAt) }}</span>
-          <AppIcon name="chevron-right" :size="16" />
-        </RouterLink>
+    <section v-if="picks.length" class="resume">
+      <div class="resume__head">
+        <h2 class="section-title"><AppIcon name="history" /> 继续上次的练习</h2>
+        <label v-if="picks.length > 1" class="resume__pick">
+          <span class="sr-only">选择练习</span>
+          <select v-model="selectedId" aria-label="选择练习">
+            <option v-for="s in picks" :key="s.id" :value="s.id">{{ pickLabel(s) }}</option>
+          </select>
+        </label>
       </div>
+      <button v-if="selected" type="button" class="resume__item" :disabled="opening" @click="openPick(selected)">
+        <span :class="['tag', `tag--${selected.language}`]">{{ LANG_NAMES[selected.language || 'en'] }}</span>
+        <span class="tag tag--mode">{{ MODE_NAMES[selected.mode] }}</span>
+        <strong>{{ selected.topic }}</strong>
+        <span class="muted">{{ pickMeta(selected) }}</span>
+        <AppIcon name="chevron-right" :size="16" />
+      </button>
     </section>
 
     <section v-if="coach && (coach.level || coach.weakest)" class="coach">
@@ -257,15 +263,67 @@ export default defineComponent({
       } catch { /* coaching is optional */ }
     }, { immediate: true })
 
-    // unfinished practices (progress is saved as you go): offer to continue them
-    const unfinished = ref<SessionSummary[]>([])
-    onMounted(async () => {
+    // recent practices: default is the last unfinished one; picker also lists imports and earlier topics
+    const picks = ref<SessionSummary[]>([])
+    const selectedId = ref('')
+    const opening = ref(false)
+    const selected = computed(() => picks.value.find((s) => s.id === selectedId.value) || picks.value[0] || null)
+
+    function byRecent(a: SessionSummary, b: SessionSummary) {
+      return (b.updatedAt || b.createdAt).localeCompare(a.updatedAt || a.createdAt)
+    }
+    function pickLabel(s: SessionSummary) {
+      const mode = MODE_NAMES[s.mode as Mode] || s.mode || ''
+      if (!s.done && (s.answered || 0) > 0) return `${s.topic} · ${mode} · 已答 ${s.answered}`
+      if (!s.done) return `${s.topic} · ${mode} · 未开始`
+      return `${s.topic} · ${mode} · ${s.overall ?? '—'} 分`
+    }
+    function pickMeta(s: SessionSummary) {
+      const when = dateTime(s.updatedAt || s.createdAt)
+      if (!s.done && (s.answered || 0) > 0) return `已答 ${s.answered} 条 · ${when}`
+      if (!s.done) return `未开始 · ${when}`
+      return `${s.overall ?? '—'} 分 · 点此用同一套题再练 · ${when}`
+    }
+    async function openPick(s: SessionSummary) {
+      if (opening.value) return
+      opening.value = true
+      error.value = ''
+      try {
+        if (!s.done) {
+          router.push(`/practice/${s.id}`)
+          return
+        }
+        const r = await api.repeat(s.id)
+        router.push(`/practice/${r.id}`)
+      } catch (e: any) {
+        error.value = e.message
+      } finally {
+        opening.value = false
+      }
+    }
+
+    async function loadPicks(preferId = '') {
       try {
         const all = await api.sessions()
         const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString()
-        unfinished.value = all.filter((s) => !s.done && s.answered > 0 && (s.updatedAt || s.createdAt) > weekAgo).slice(0, 3)
+        const recent = (s: SessionSummary) => (s.updatedAt || s.createdAt) > weekAgo
+        const continuing = all.filter((s) => !s.done && (s.answered || 0) > 0 && recent(s)).sort(byRecent)
+        const fresh = all.filter((s) => !s.done && !(s.answered || 0) && recent(s)).sort(byRecent)
+        const finished = all.filter((s) => s.done && recent(s)).sort(byRecent).slice(0, 12)
+        const seen = new Set<string>()
+        const list: SessionSummary[] = []
+        for (const s of [...continuing, ...fresh, ...finished]) {
+          if (seen.has(s.id)) continue
+          seen.add(s.id)
+          list.push(s)
+          if (list.length >= 20) break
+        }
+        picks.value = list
+        selectedId.value = (preferId && list.some((s) => s.id === preferId) && preferId)
+          || continuing[0]?.id || fresh[0]?.id || list[0]?.id || ''
       } catch { /* optional */ }
-    })
+    }
+    onMounted(() => { loadPicks() })
 
     async function generate(body: Record<string, any>) {
       busy.value = true
@@ -367,6 +425,7 @@ export default defineComponent({
           const result = await api.importTopics(file.value!)
           imported.value = result.imported
           importErrors.value = result.errors || []
+          if (result.imported.length) await loadPicks(result.imported[0].id)
           if (result.imported.length === 1 && !result.errors?.length) {
             closeUpload()
             router.push(`/practice/${result.imported[0].id}`)
@@ -405,7 +464,9 @@ export default defineComponent({
       closeUpload, openUpload, isAdmin, isTopicImport, uploadAccept, prompt, copiedPrompt, copyPrompt,
       imported, importErrors,
       languages, levelOptions, regions, accentKey, currentAccent, currentRegion,
-      regionAccents, pickRegion, hasCount, countHint, coach, autoApplied, unfinished, submit, startNew, useLast, drill,
+      regionAccents, pickRegion, hasCount, countHint, coach, autoApplied,
+      picks, selectedId, selected, opening, pickLabel, pickMeta, openPick,
+      submit, startNew, useLast, drill,
       setPrefs, setAccent, modes: MODES, suggestions: SUGGESTIONS, LANG_NAMES, LEVEL_NAMES, MODE_NAMES, dateTime,
     }
   },
