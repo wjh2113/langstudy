@@ -33,23 +33,64 @@
     <section v-if="picks.length" class="resume">
       <div class="resume__head">
         <h2 class="section-title"><AppIcon name="history" /> 继续上次的练习</h2>
-        <div class="resume__tools">
-          <label v-if="picks.length > 1" class="resume__pick">
-            <span class="sr-only">选择练习</span>
-            <select v-model="selectedId" aria-label="选择练习">
-              <option v-for="s in picks" :key="s.id" :value="s.id">{{ pickLabel(s) }}</option>
-            </select>
+        <RouterLink to="/topics" class="btn btn--ghost btn--sm">话题管理</RouterLink>
+      </div>
+      <div ref="comboEl" class="resume__combo" :class="{ open: pickOpen }">
+        <div v-if="!pickOpen && selected" class="resume__face">
+          <button type="button" class="resume__item resume__item--go" :disabled="opening" @click="openPick(selected)">
+            <span :class="['tag', `tag--${selected.language}`]">{{ LANG_NAMES[selected.language || 'en'] }}</span>
+            <span class="tag tag--mode">{{ MODE_NAMES[selected.mode] }}</span>
+            <strong>{{ selected.topic }}</strong>
+            <span class="muted">{{ pickMeta(selected) }}</span>
+            <AppIcon name="chevron-right" :size="16" />
+          </button>
+          <button
+            v-if="picks.length > 1"
+            type="button"
+            class="resume__toggle"
+            :aria-expanded="pickOpen"
+            aria-label="搜索并选择练习"
+            @click="openPickMenu"
+          >
+            <AppIcon name="chevron-down" :size="18" />
+          </button>
+        </div>
+        <div v-else class="resume__panel">
+          <label class="resume__search">
+            <AppIcon name="search" :size="18" />
+            <input
+              ref="pickInput"
+              v-model="pickQuery"
+              type="search"
+              enterkeyhint="search"
+              placeholder="搜索话题、形式、语言…"
+              aria-label="搜索练习"
+              aria-controls="resume-pick-list"
+              @keydown="onPickKey"
+            />
+            <button type="button" class="resume__toggle" aria-label="收起" @click="closePickMenu">
+              <AppIcon name="chevron-down" :size="18" />
+            </button>
           </label>
-          <RouterLink to="/topics" class="btn btn--ghost btn--sm">话题管理</RouterLink>
+          <ul id="resume-pick-list" class="resume__menu" role="listbox">
+            <li v-for="(s, i) in filteredPicks" :key="s.id" role="option" :aria-selected="s.id === selectedId">
+              <button
+                type="button"
+                :class="['resume__option', { on: s.id === selectedId || i === pickActive }]"
+                :disabled="opening"
+                @click="choosePick(s)"
+                @mouseenter="pickActive = i"
+              >
+                <span :class="['tag', `tag--${s.language}`]">{{ LANG_NAMES[s.language || 'en'] }}</span>
+                <span class="tag tag--mode">{{ MODE_NAMES[s.mode] }}</span>
+                <strong>{{ s.topic }}</strong>
+                <span class="muted">{{ pickMeta(s) }}</span>
+              </button>
+            </li>
+            <li v-if="!filteredPicks.length" class="resume__empty muted">没有匹配的练习</li>
+          </ul>
         </div>
       </div>
-      <button v-if="selected" type="button" class="resume__item" :disabled="opening" @click="openPick(selected)">
-        <span :class="['tag', `tag--${selected.language}`]">{{ LANG_NAMES[selected.language || 'en'] }}</span>
-        <span class="tag tag--mode">{{ MODE_NAMES[selected.mode] }}</span>
-        <strong>{{ selected.topic }}</strong>
-        <span class="muted">{{ pickMeta(selected) }}</span>
-        <AppIcon name="chevron-right" :size="16" />
-      </button>
     </section>
 
     <section v-if="coach && (coach.level || coach.weakest)" class="coach">
@@ -175,7 +216,7 @@
 </template>
 
 <script lang="ts">
-import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import AppIcon from '../components/ui/AppIcon.vue'
 import AccentSelect, { groupAccents } from '../components/ui/AccentSelect.vue'
@@ -270,27 +311,94 @@ export default defineComponent({
     const picks = ref<SessionSummary[]>([])
     const selectedId = ref('')
     const opening = ref(false)
+    const pickOpen = ref(false)
+    const pickQuery = ref('')
+    const pickActive = ref(0)
+    const comboEl = ref<HTMLElement | null>(null)
+    const pickInput = ref<HTMLInputElement | null>(null)
     const selected = computed(() => picks.value.find((s) => s.id === selectedId.value) || picks.value[0] || null)
 
     function byRecent(a: SessionSummary, b: SessionSummary) {
       return (b.updatedAt || b.createdAt).localeCompare(a.updatedAt || a.createdAt)
     }
-    function pickLabel(s: SessionSummary) {
+    function pickHaystack(s: SessionSummary) {
       const mode = MODE_NAMES[s.mode as Mode] || s.mode || ''
-      if (!s.done && (s.answered || 0) > 0) return `${s.topic} · ${mode} · 已答 ${s.answered}`
-      if (!s.done) return `${s.topic} · ${mode} · 未开始`
-      return `${s.topic} · ${mode} · ${s.overall ?? '—'} 分`
+      const lang = LANG_NAMES[s.language || 'en'] || ''
+      const level = LEVEL_NAMES[s.level || ''] || s.level || ''
+      return `${s.topic} ${s.title || ''} ${mode} ${lang} ${level} ${pickMeta(s)}`.toLowerCase()
     }
+    function fuzzyMatch(hay: string, query: string) {
+      const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+      if (!tokens.length) return true
+      return tokens.every((t) => {
+        if (hay.includes(t)) return true
+        let i = 0
+        for (const ch of hay) {
+          if (ch === t[i]) i += 1
+          if (i >= t.length) return true
+        }
+        return false
+      })
+    }
+    const filteredPicks = computed(() => {
+      const q = pickQuery.value
+      if (!q.trim()) return picks.value
+      return picks.value.filter((s) => fuzzyMatch(pickHaystack(s), q))
+    })
     function pickMeta(s: SessionSummary) {
       const when = dateTime(s.updatedAt || s.createdAt)
       if (!s.done && (s.answered || 0) > 0) return `已答 ${s.answered} 条 · ${when}`
       if (!s.done) return `未开始 · ${when}`
       return `${s.overall ?? '—'} 分 · 点此用同一套题再练 · ${when}`
     }
+    function openPickMenu() {
+      pickOpen.value = true
+      pickQuery.value = ''
+      pickActive.value = Math.max(0, filteredPicks.value.findIndex((s) => s.id === selectedId.value))
+      nextTick(() => pickInput.value?.focus())
+    }
+    function closePickMenu() {
+      pickOpen.value = false
+      pickQuery.value = ''
+      pickActive.value = 0
+    }
+    function onDocPointer(e: Event) {
+      if (!pickOpen.value || !comboEl.value) return
+      if (!comboEl.value.contains(e.target as Node)) closePickMenu()
+    }
+    function onPickKey(e: KeyboardEvent) {
+      const list = filteredPicks.value
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        closePickMenu()
+        return
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        if (!list.length) return
+        pickActive.value = (pickActive.value + 1) % list.length
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        if (!list.length) return
+        pickActive.value = (pickActive.value - 1 + list.length) % list.length
+        return
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const s = list[pickActive.value] || list[0]
+        if (s) choosePick(s)
+      }
+    }
+    watch(filteredPicks, (list) => {
+      if (pickActive.value >= list.length) pickActive.value = Math.max(0, list.length - 1)
+    })
     async function openPick(s: SessionSummary) {
       if (opening.value) return
       opening.value = true
       error.value = ''
+      closePickMenu()
       try {
         if (!s.done) {
           router.push(`/practice/${s.id}`)
@@ -303,6 +411,10 @@ export default defineComponent({
       } finally {
         opening.value = false
       }
+    }
+    function choosePick(s: SessionSummary) {
+      selectedId.value = s.id
+      openPick(s)
     }
 
     function topicKey(s: { language?: string | null; level?: string | null; mode?: string | null; topic?: string | null }) {
@@ -335,7 +447,11 @@ export default defineComponent({
           || continuing[0]?.id || fresh[0]?.id || list[0]?.id || ''
       } catch { /* optional */ }
     }
-    onMounted(() => { loadPicks() })
+    onMounted(() => {
+      loadPicks()
+      document.addEventListener('pointerdown', onDocPointer)
+    })
+    onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointer))
 
     async function generate(body: Record<string, any>) {
       busy.value = true
@@ -477,7 +593,8 @@ export default defineComponent({
       imported, importErrors,
       languages, levelOptions, regions, accentKey, currentAccent, currentRegion,
       regionAccents, pickRegion, hasCount, countHint, coach, autoApplied,
-      picks, selectedId, selected, opening, pickLabel, pickMeta, openPick,
+      picks, selectedId, selected, opening, pickOpen, pickQuery, pickActive, filteredPicks,
+      comboEl, pickInput, pickMeta, openPick, openPickMenu, closePickMenu, choosePick, onPickKey,
       submit, startNew, useLast, drill,
       setPrefs, setAccent, modes: MODES, suggestions: SUGGESTIONS, LANG_NAMES, LEVEL_NAMES, MODE_NAMES, dateTime,
     }
