@@ -21,6 +21,8 @@ const SR_ERRORS: Record<string, string> = {
 const SILENCE_MS = 1500 // hands-free: this long a pause after speaking ends the answer
 const NO_SPEECH_MS = 8000 // hands-free: give up if nothing is said
 const MAX_MS = 90000
+const RECORDER_STOP_MS = 3000 // MediaRecorder.onstop can hang on some mobile browsers
+const STT_TIMEOUT_MS = 45000 // don't leave the UI on「正在识别…」forever
 
 export interface RecordingResult {
   text: string
@@ -30,6 +32,18 @@ export interface RecordingResult {
   audioUrl: string | null
   startedAt: number
   voiceStartAt: number | null
+}
+
+function pickMime(): string {
+  if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return ''
+  const types = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4',
+    'audio/aac',
+    'audio/ogg;codecs=opus',
+  ]
+  return types.find((t) => MediaRecorder.isTypeSupported(t)) || ''
 }
 
 /**
@@ -63,6 +77,7 @@ export function useRecorder(
 
   /** autoStop: end automatically after a pause (hands-free mode). */
   async function start({ autoStop = false }: { autoStop?: boolean } = {}) {
+    if (state.value !== 'idle') return false
     const { locale, language, serverSTT } = getEnv()
     error.value = ''
     interim.value = ''
@@ -86,6 +101,7 @@ export function useRecorder(
     // level meter + voice activity
     const AC = window.AudioContext || (window as any).webkitAudioContext
     s.audioCtx = new AC()
+    try { await s.audioCtx.resume() } catch { /* ignore */ }
     const analyser = s.audioCtx.createAnalyser()
     analyser.fftSize = 1024
     s.audioCtx.createMediaStreamSource(stream).connect(analyser)
@@ -115,11 +131,13 @@ export function useRecorder(
     }
     tick()
 
-    // recorder
+    // recorder — pick a mime the phone actually supports (Safari prefers mp4)
     try {
-      s.recorder = new MediaRecorder(stream)
-      s.recorder.ondataavailable = (e: BlobEvent) => e.data.size && s.chunks.push(e.data)
-      s.recorder.start()
+      const mime = pickMime()
+      s.mime = mime
+      s.recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
+      s.recorder.ondataavailable = (e: BlobEvent) => e.data?.size && s.chunks.push(e.data)
+      s.recorder.start(250) // timeslice so short taps still get data before stop
     } catch {
       s.recorder = null
     }
@@ -165,53 +183,99 @@ export function useRecorder(
     return true
   }
 
+  function blobFromChunks(session: any): Blob | null {
+    if (!session.chunks?.length) return null
+    const type = (session.recorder?.mimeType || session.mime || 'audio/webm').split(';')[0]
+    return new Blob(session.chunks, { type })
+  }
+
+  /** Wait for MediaRecorder to flush; never hang the「正在识别…」UI. */
+  function stopRecorder(session: any): Promise<Blob | null> {
+    return new Promise((resolve) => {
+      if (!session.recorder || session.recorder.state === 'inactive') return resolve(blobFromChunks(session))
+      let done = false
+      const finish = (blob: Blob | null) => {
+        if (done) return
+        done = true
+        resolve(blob)
+      }
+      session.recorder.onstop = () => finish(blobFromChunks(session))
+      session.recorder.onerror = () => finish(blobFromChunks(session))
+      try {
+        if (typeof session.recorder.requestData === 'function' && session.recorder.state === 'recording') {
+          session.recorder.requestData()
+        }
+        session.recorder.stop()
+      } catch {
+        finish(blobFromChunks(session))
+        return
+      }
+      setTimeout(() => finish(blobFromChunks(session)), RECORDER_STOP_MS)
+    })
+  }
+
   async function stop(): Promise<RecordingResult | null> {
-    if (!s.stream) return null
+    if (!s.stream || state.value === 'processing') return null
     const session = s
     state.value = 'processing'
     const endedAt = performance.now()
     session.wantRecognition = false
 
-    const recorded = new Promise<Blob | null>((resolve) => {
-      if (!session.recorder || session.recorder.state === 'inactive') return resolve(null)
-      session.recorder.onstop = () => resolve(new Blob(session.chunks, { type: session.recorder.mimeType || 'audio/webm' }))
-      session.recorder.stop()
-    })
-    const recognised = new Promise<void>((resolve) => {
-      if (!session.recognition) return resolve()
-      if (session.serverSTT) { // live text only: don't wait for it
-        try { session.recognition.abort() } catch { /* ignore */ }
-        return resolve()
-      }
-      session.recEnded = () => resolve()
-      try { session.recognition.stop() } catch { resolve() }
-      setTimeout(() => resolve(), 2500) // don't hang if onend never fires
-    })
-    const [blob] = await Promise.all([recorded, recognised])
-    cleanup()
-    level.value = 0
-    interim.value = ''
+    try {
+      const recognised = new Promise<void>((resolve) => {
+        if (!session.recognition) return resolve()
+        if (session.serverSTT) { // live text only: don't wait for it
+          try { session.recognition.abort() } catch { /* ignore */ }
+          return resolve()
+        }
+        session.recEnded = () => resolve()
+        try { session.recognition.stop() } catch { resolve() }
+        setTimeout(() => resolve(), 2500) // don't hang if onend never fires
+      })
+      const [blob] = await Promise.all([stopRecorder(session), recognised])
+      cleanup()
+      level.value = 0
+      interim.value = ''
 
-    const voiced = session.firstVoice && session.lastVoice ? (session.lastVoice - session.firstVoice) / 1000 + 0.4 : 0
-    const total = (endedAt - session.startedAt) / 1000
-    const durationSec = Math.round(Math.min(total, voiced || total) * 10) / 10
+      const voiced = session.firstVoice && session.lastVoice ? (session.lastVoice - session.firstVoice) / 1000 + 0.4 : 0
+      const total = (endedAt - session.startedAt) / 1000
+      const durationSec = Math.round(Math.min(total, voiced || total) * 10) / 10
 
-    let text = session.finals.join(session.language === 'ja' ? '' : ' ').trim()
-    let confidence: number | null = session.confidences.length
-      ? session.confidences.reduce((a: number, b: number) => a + b, 0) / session.confidences.length
-      : null
-    if (session.serverSTT && blob) {
-      try {
-        text = (await api.stt(blob, session.language)).text
-        confidence = null
-      } catch (e: any) {
-        error.value = e.message
+      let text = session.finals.join(session.language === 'ja' ? '' : ' ').trim()
+      let confidence: number | null = session.confidences.length
+        ? session.confidences.reduce((a: number, b: number) => a + b, 0) / session.confidences.length
+        : null
+      if (session.serverSTT) {
+        if (!blob || blob.size < 64) {
+          if (!text) error.value = '没有录到声音，请靠近麦克风再说一次'
+        } else {
+          try {
+            const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null
+            const timer = ctrl ? setTimeout(() => ctrl.abort(), STT_TIMEOUT_MS) : 0
+            try {
+              text = (await api.stt(blob, session.language, ctrl?.signal)).text
+              confidence = null
+            } finally {
+              if (timer) clearTimeout(timer)
+            }
+          } catch (e: any) {
+            if (e?.name === 'AbortError') error.value = '识别超时了，请再试一次或改用文字输入'
+            else error.value = e.message || '语音识别失败，请再试一次'
+          }
+        }
       }
-    }
-    state.value = 'idle'
-    return {
-      text, confidence, durationSec, audioBlob: blob, audioUrl: blob ? URL.createObjectURL(blob) : null,
-      startedAt: session.startedAt, voiceStartAt: session.firstVoice || null, // for shadowing lag
+      return {
+        text, confidence, durationSec, audioBlob: blob, audioUrl: blob ? URL.createObjectURL(blob) : null,
+        startedAt: session.startedAt, voiceStartAt: session.firstVoice || null, // for shadowing lag
+      }
+    } catch (e: any) {
+      cleanup()
+      level.value = 0
+      interim.value = ''
+      error.value = e?.message || '录音处理失败，请再试一次'
+      return null
+    } finally {
+      state.value = 'idle'
     }
   }
 

@@ -13,7 +13,8 @@ export async function request<T = any>(path: string, options: RequestInit = {}):
   let res: Response
   try {
     res = await fetch(BASE + path, { credentials: 'same-origin', ...options })
-  } catch {
+  } catch (e: any) {
+    if (e?.name === 'AbortError') throw e
     throw new ApiError('连不上后端服务，请确认 backend 已启动（端口 8000）', 0)
   }
   if (!res.ok) {

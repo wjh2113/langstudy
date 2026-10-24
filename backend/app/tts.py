@@ -131,6 +131,7 @@ async def synthesize(text: str, language: str, voice_index: int = 0, rate: float
             # tightening so the opening clip returns sooner; longer lines still tighten.
             if provider == "gateway" and len(text) > 60:
                 audio = await asyncio.to_thread(tighten_mp3, audio, text)
+            audio = bytes(audio)  # lameenc / some gateways return bytearray
             tmp = path.with_suffix(".part")
             tmp.write_bytes(audio)
             os.replace(tmp, path)

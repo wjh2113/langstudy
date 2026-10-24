@@ -36,10 +36,10 @@
           <AppIcon :name="recState === 'recording' ? 'stop' : 'mic'" :size="recState === 'recording' ? 24 : 32" />
         </button>
       </div>
-      <p class="mic__timer" :class="{ 'is-live': recState === 'recording' }">{{ mmss(recState === 'recording' ? rec.elapsed.value : take ? take.durationSec : 0) }}</p>
+      <p class="mic__timer" :class="{ 'is-live': recState === 'recording' }">{{ mmss(recState === 'recording' || recState === 'processing' ? rec.elapsed.value : take ? take.durationSec : 0) }}</p>
       <p class="mic__status">
         <template v-if="recState === 'recording'">{{ autoMode ? '正在听…说完停顿一下会自动提交' : '正在录音…说完点一下停止' }}</template>
-        <template v-else-if="recState === 'processing'">正在识别…</template>
+        <template v-else-if="recState === 'processing'">正在识别…请稍候</template>
         <template v-else-if="!take">{{ placeholder || (handsFree ? '免手动：轮到你时会自动开始听' : '点击开始录音') }}</template>
         <template v-else>录好了，确认无误就提交</template>
       </p>

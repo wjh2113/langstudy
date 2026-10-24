@@ -77,7 +77,8 @@ export const api = {
   translate: (texts: string[], language: string) => request<TranslateOut>('/translate', post({ texts, language })),
   coach: (language: string) => request<Coach>(`/coach/${language}`),
   tts: (body: TTSReq) => request<Blob>('/tts', post(body)),
-  stt: (blob: Blob, language: string) => request<{ text: string }>('/stt', { method: 'POST', body: audioForm(blob, { language }) }),
+  stt: (blob: Blob, language: string, signal?: AbortSignal) =>
+    request<{ text: string }>('/stt', { method: 'POST', body: audioForm(blob, { language }), signal }),
   /** Pronunciation assessment (billed): from a recording in hand, or one saved with the session. */
   pronounce: (src: { blob?: Blob | null; sessionId?: string; audioName?: string }, text: string, language: string) =>
     request<PronounceResult>('/pronounce', {

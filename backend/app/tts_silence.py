@@ -140,4 +140,5 @@ def _encode_mp3(samples: array.array, sample_rate: int) -> bytes:
     encoder.set_in_sample_rate(sample_rate)
     encoder.set_channels(1)
     encoder.set_quality(2)
-    return encoder.encode(samples.tobytes()) + encoder.flush()
+    # lameenc may return bytearray; Starlette Response needs real bytes.
+    return bytes(encoder.encode(samples.tobytes()) + encoder.flush())

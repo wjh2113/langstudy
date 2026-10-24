@@ -18,7 +18,7 @@ async def api_tts(req: TTSReq, user: dict = Depends(current_user)):
             audio = await synthesize(req.text, req.language, req.voiceIndex, req.rate, req.accent)
     except (ValueError, TTSError) as e:
         bad(e, 502)
-    return Response(content=audio, media_type="audio/mpeg", headers={"Cache-Control": "private, max-age=86400"})
+    return Response(content=bytes(audio), media_type="audio/mpeg", headers={"Cache-Control": "private, max-age=86400"})
 
 
 @router.post("/stt")
