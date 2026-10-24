@@ -1,4 +1,7 @@
 """Speech: text-to-speech, speech recognition and (on demand) pronunciation assessment."""
+import logging
+import time
+
 from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
 
 from .. import ai, config
@@ -9,6 +12,7 @@ from ..tts import TTSError, synthesize
 from .sessions import _AUDIO_NAME, audio_dir
 
 router = APIRouter(prefix="/api", tags=["speech"])
+log = logging.getLogger("langstudy.speech")
 
 
 @router.post("/tts")
@@ -26,11 +30,20 @@ async def api_stt(audio: UploadFile = File(...), language: str = Form("en"), use
     data = await audio.read()
     if len(data) > MAX_AUDIO:
         bad("录音太长了，请分段作答")
+    started = time.monotonic()
     try:
         with ai.scope(user):
             text = transcribe(data, audio.filename or "speech.webm", language, audio.content_type or "")
     except STTError as e:
+        log.warning(
+            "stt failed user=%s lang=%s bytes=%s after=%.1fs: %s",
+            user.get("username") or user.get("id"), language, len(data), time.monotonic() - started, e,
+        )
         bad(e, 502)
+    log.info(
+        "stt ok user=%s lang=%s bytes=%s chars=%s after=%.1fs",
+        user.get("username") or user.get("id"), language, len(data), len(text or ""), time.monotonic() - started,
+    )
     return {"text": text}
 
 
