@@ -21,7 +21,7 @@
           </button>
         </div>
         <div v-show="tab === 'practice'" class="practice__flow">
-          <component :is="modeComponent" :content="content" :env="env" :turns="turns" :tracker="tracker" @add-turn="addTurn" />
+          <component :is="modeComponent" :content="content" :env="env" :turns="turns" :tracker="tracker" :finishing="finishing" @add-turn="addTurn" @finish="finish" />
         </div>
         <StudyNotes v-if="notesOpened" v-show="tab === 'notes'" :session-id="session.id" :env="env" :locked="!!content.notesLocked" />
       </main>

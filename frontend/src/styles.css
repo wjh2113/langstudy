@@ -322,6 +322,8 @@ audio { height: 32px; max-width: 260px; }
 .tip { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 14px; margin: 8px 0 0 56px; }
 .tip .icon { color: var(--warn); }
 .done-note { display: flex; align-items: center; gap: 10px; color: var(--success); font-weight: 500; }
+.done-note--actions { flex-direction: column; align-items: stretch; gap: 14px; padding: 16px; border-radius: var(--radius); background: var(--surface-2); border: 1px solid var(--border); }
+.done-note--actions .btn { justify-content: center; }
 .crumbs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--text-2); font-size: 14px; margin-bottom: 4px; }
 
 /* ----------------------------------------------------------------- forms */
@@ -835,6 +837,8 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
 .msg__bubble .play--sm { margin-top: 2px; }
 .msg__hint { font-size: 15px; display: grid; }
 .msg__meta { font-size: 12px; color: var(--text-3); }
+.msg__col .shadow-card { justify-self: stretch; margin-top: 4px; width: 100%; }
+.msg--me .msg__col .shadow-card { justify-self: stretch; }
 .shadow-card { display: flex; gap: 14px; padding: 18px 20px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface-2); }
 .shadow-card__icon { display: grid; place-items: center; width: 42px; height: 42px; flex: none; border-radius: 50%; background: var(--primary-soft); color: var(--primary); }
 .shadow-card__body { flex: 1; display: grid; gap: 8px; min-width: 0; }

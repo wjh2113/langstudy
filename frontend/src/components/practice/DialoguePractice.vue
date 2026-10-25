@@ -45,6 +45,17 @@
               </template>
             </div>
             <span class="msg__meta">{{ l.role === st.myRole ? '你 · ' : '' }}{{ roleName(l.role) }}</span>
+            <!-- 跟读结果卡片：跟随对应的台词，不再浮在底部 -->
+            <div v-if="l.role === st.myRole && turnOf(l.id)" class="shadow-card">
+              <span class="shadow-card__icon"><AppIcon name="wave" /></span>
+              <div class="shadow-card__body">
+                <div class="shadow-card__head">
+                  <strong>跟读结果</strong>
+                  <PronBadge :turn="turnOf(l.id)" />
+                </div>
+                <DiffText v-if="turnOf(l.id)?.diff" :tokens="turnOf(l.id).diff.tokens" :env="env" />
+              </div>
+            </div>
           </div>
         </div>
         <p v-if="current && current.role !== st.myRole" class="hint thinking">
@@ -53,24 +64,17 @@
         <div ref="bottom" />
       </div>
 
-      <div v-if="lastMine" class="shadow-card">
-        <span class="shadow-card__icon"><AppIcon name="wave" /></span>
-        <div class="shadow-card__body">
-          <div class="shadow-card__head">
-            <strong>跟读结果</strong>
-            <PronBadge :turn="lastMine" />
-          </div>
-          <DiffText v-if="lastMine.diff" :tokens="lastMine.diff.tokens" :env="env" />
-          <p v-else :class="env.textClass">{{ lastMine.answer }}</p>
-        </div>
-      </div>
-
       <div v-if="current && current.role === st.myRole" class="dlg__input">
         <AnswerBox :key="current.id" compact :env="env" submit-label="提交" :hands-free="env.handsFree" :listen-signal="listen"
           :placeholder="st.free ? '用自己的话回应，点击录音开始…' : '点击录音，开始你的朗读…'" @submit="save" />
         <button type="button" class="link link--muted" @click="st.idx++">跳过这句</button>
       </div>
-      <p v-if="!current" class="done-note"><AppIcon name="check-circle" /> 对话结束了，点“结束并评分”查看报告。</p>
+      <div v-else-if="!current" class="done-note done-note--actions">
+        <p><AppIcon name="check-circle" /> 对话结束了，查看你的练习报告。</p>
+        <button type="button" class="btn btn--primary btn--lg" :disabled="finishing" @click="$emit('finish')">
+          <AppIcon name="flag" :size="20" /> {{ finishing ? '正在评分…' : '结束并评分' }}
+        </button>
+      </div>
     </section>
   </div>
 </template>
@@ -100,8 +104,9 @@ export default defineComponent({
     env: { type: Object as PropType<Env>, required: true },
     turns: { type: Array as PropType<Turn[]>, required: true },
     tracker: { type: Object as PropType<{ plays: Record<string, number>; count: (id: string) => void }>, required: true },
+    finishing: { type: Boolean, default: false },
   },
-  emits: ['add-turn'],
+  emits: ['add-turn', 'finish'],
   setup(props, { emit }) {
     const revealed = useRevealed()
     const st = useModeState<DState>('dialogue', { myRole: null, idx: 0, free: false })
@@ -122,7 +127,6 @@ export default defineComponent({
     }
     const turnOf = (id: string) => props.turns.find((t) => t.id === id)
     const turnsStarted = computed(() => props.turns.length > 0)
-    const lastMine = computed(() => [...props.turns].reverse().find((t) => t.kind === 'line') || null)
     let timer: ReturnType<typeof setTimeout> | undefined
 
     function chooseRole(id: string) {
@@ -183,7 +187,7 @@ export default defineComponent({
       st.idx++
     }
 
-    return { st, revealed, bottom, listen, roles, shown, current, roleName, voiceOf, turnOf, turnsStarted, lastMine, chooseRole, skipAi, save }
+    return { st, revealed, bottom, listen, roles, shown, current, roleName, voiceOf, turnOf, turnsStarted, chooseRole, skipAi, save }
   },
 })
 </script>
