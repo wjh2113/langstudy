@@ -38,6 +38,7 @@ GATEWAY_IDEMPOTENCY_HEADER = _env("GATEWAY_IDEMPOTENCY_HEADER", "Idempotency-Key
 
 # ---- AI 调用：超时、每日上限、后台任务 ----
 AI_TIMEOUT_SEC = float(_env("AI_TIMEOUT_SEC", "90"))  # 单次大模型调用超时（秒）
+STT_TIMEOUT_SEC = float(_env("STT_TIMEOUT_SEC", "20"))  # 单次语音识别超时（秒），最多再重试 1 次
 AI_DAILY_LIMIT = int(_env("AI_DAILY_LIMIT", "0") or 0)  # 每个用户每天最多调用大模型几次，0 = 不限（管理员不受限）
 JOB_WORKERS = int(_env("JOB_WORKERS", "4") or 4)  # 同时处理出题/评分/笔记的后台线程数
 

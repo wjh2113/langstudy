@@ -3,6 +3,7 @@
 Routes live in app/routers/ (one module per area); this file wires them up,
 runs startup tasks and serves the built frontend.
 """
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -22,6 +23,15 @@ async def lifespan(_app: FastAPI):
     maintenance.start()
     yield
 
+
+# uvicorn only sets up its own loggers; without this, app INFO logs (e.g. stt timings) are dropped
+_handler = logging.StreamHandler()
+_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+_applog = logging.getLogger("langstudy")
+if not _applog.handlers:
+    _applog.addHandler(_handler)
+_applog.setLevel(logging.INFO)
+_applog.propagate = False
 
 db.init()  # migrations run on import so scripts and tests get the current schema too
 app = FastAPI(title="LangStudy", version="0.3.0", lifespan=lifespan)

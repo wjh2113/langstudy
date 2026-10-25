@@ -9,6 +9,9 @@ import { api } from '../api'
 
 const SR: any = typeof window !== 'undefined' && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
 export const browserRecognitionSupported = Boolean(SR)
+// On phones the browser's recogniser fights MediaRecorder for the microphone (and in mainland China
+// it can't reach Google anyway), so with server recognition we only record there.
+const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile|HarmonyOS/i.test(navigator.userAgent)
 
 const SR_ERRORS: Record<string, string> = {
   network: '浏览器语音识别连不上服务（Chrome 在国内通常无法使用）。请换用 Edge 浏览器，或在后端配置服务端识别；也可以改用文字输入。',
@@ -142,8 +145,8 @@ export function useRecorder(
       s.recorder = null
     }
 
-    // browser recognition: the transcript itself, or (with server recognition) just live feedback
-    if (SR) {
+    // browser recognition: the transcript itself, or (with server recognition) just live feedback on desktop
+    if (SR && !(serverSTT && isMobile)) {
       const rec = new SR()
       const session = s
       rec.lang = locale
@@ -232,7 +235,9 @@ export function useRecorder(
         try { session.recognition.stop() } catch { resolve() }
         setTimeout(() => resolve(), 2500) // don't hang if onend never fires
       })
+      const t0 = performance.now()
       const [blob] = await Promise.all([stopRecorder(session), recognised])
+      const tFlushed = performance.now()
       cleanup()
       level.value = 0
       interim.value = ''
@@ -255,6 +260,7 @@ export function useRecorder(
             try {
               text = (await api.stt(blob, session.language, ctrl?.signal)).text
               confidence = null
+              console.info(`[stt] ${blob.type} ${Math.round(blob.size / 1024)}KB · 停止录音 ${Math.round(tFlushed - t0)}ms · 上传+识别 ${Math.round(performance.now() - tFlushed)}ms`)
             } finally {
               if (timer) clearTimeout(timer)
             }

@@ -1,4 +1,5 @@
 """Speech: text-to-speech, speech recognition and (on demand) pronunciation assessment."""
+import asyncio
 import logging
 import time
 
@@ -33,7 +34,8 @@ async def api_stt(audio: UploadFile = File(...), language: str = Form("en"), use
     started = time.monotonic()
     try:
         with ai.scope(user):
-            text = transcribe(data, audio.filename or "speech.webm", language, audio.content_type or "")
+            # the gateway call is blocking: run it in a thread so other requests aren't stuck behind it
+            text = await asyncio.to_thread(transcribe, data, audio.filename or "speech.webm", language, audio.content_type or "")
     except STTError as e:
         log.warning(
             "stt failed user=%s lang=%s bytes=%s after=%.1fs: %s",
@@ -41,8 +43,9 @@ async def api_stt(audio: UploadFile = File(...), language: str = Form("en"), use
         )
         bad(e, 502)
     log.info(
-        "stt ok user=%s lang=%s bytes=%s chars=%s after=%.1fs",
-        user.get("username") or user.get("id"), language, len(data), len(text or ""), time.monotonic() - started,
+        "stt ok user=%s lang=%s type=%s bytes=%s chars=%s after=%.1fs",
+        user.get("username") or user.get("id"), language, audio.content_type, len(data), len(text or ""),
+        time.monotonic() - started,
     )
     return {"text": text}
 
@@ -73,6 +76,6 @@ async def api_pronounce(text: str = Form(...), language: str = Form("en"), audio
 
     try:
         with ai.scope(user, sessionId or None), ai.track("pronounce", config.GATEWAY_CAP_PRONOUNCE, chars=len(data)):
-            return pronounce(data, filename, mime, text.strip(), language)
+            return await asyncio.to_thread(pronounce, data, filename, mime, text.strip(), language)
     except GatewayError as e:
         bad(e, 502)

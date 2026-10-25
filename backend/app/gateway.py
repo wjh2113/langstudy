@@ -57,10 +57,11 @@ def _raise_for(resp: httpx.Response, what: str):
     raise GatewayError(f"{what}失败（{resp.status_code}）：{hint or detail}" + (f"（{detail}）" if hint and detail else ""))
 
 
-def _post(path: str, what: str, timeout: float, headers: dict, **kwargs) -> httpx.Response:
+def _post(path: str, what: str, timeout: float, headers: dict, retries: int | None = None, **kwargs) -> httpx.Response:
     headers = {**headers, config.GATEWAY_IDEMPOTENCY_HEADER: uuid.uuid4().hex}
-    for attempt in range(RETRIES + 1):
-        last = attempt == RETRIES
+    retries = RETRIES if retries is None else retries
+    for attempt in range(retries + 1):
+        last = attempt == retries
         try:
             resp = httpx.post(_url(path), timeout=timeout, headers=headers, **kwargs)
         except (httpx.TimeoutException, httpx.NetworkError) as e:
@@ -126,8 +127,8 @@ def chat(messages: list, capability: str, temperature: float | None = None) -> s
 
 def transcribe(audio: bytes, filename: str, mime: str, language: str) -> str:
     data = _post(
-        "/api/ai/transcribe", "语音识别", 90,
-        headers=_headers(json_body=False),
+        "/api/ai/transcribe", "语音识别", config.STT_TIMEOUT_SEC,
+        headers=_headers(json_body=False), retries=1,  # the learner is waiting: fail fast rather than retry for minutes
         files={"file": (filename, audio, mime or "application/octet-stream")},
         data={"capability": config.GATEWAY_CAP_SPEECH, "language": language, "dataClass": "internal",
               "fallback": "true", "tenantId": config.GATEWAY_TENANT},
