@@ -9,9 +9,6 @@ import { api } from '../api'
 
 const SR: any = typeof window !== 'undefined' && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
 export const browserRecognitionSupported = Boolean(SR)
-// On phones the browser's recogniser fights MediaRecorder for the microphone (and in mainland China
-// it can't reach Google anyway), so with server recognition we only record there.
-const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile|HarmonyOS/i.test(navigator.userAgent)
 
 const SR_ERRORS: Record<string, string> = {
   network: '浏览器语音识别连不上服务（Chrome 在国内通常无法使用）。请换用 Edge 浏览器，或在后端配置服务端识别；也可以改用文字输入。',
@@ -21,10 +18,10 @@ const SR_ERRORS: Record<string, string> = {
   'language-not-supported': '浏览器不支持这个语言的识别，请在后端配置服务端识别。',
 }
 
-const SILENCE_MS = 1500 // hands-free: this long a pause after speaking ends the answer
+const SILENCE_MS = 1000 // hands-free: this long a pause after speaking ends the answer
 const NO_SPEECH_MS = 8000 // hands-free: give up if nothing is said
 const MAX_MS = 90000
-const RECORDER_STOP_MS = 3000 // MediaRecorder.onstop can hang on some mobile browsers
+const RECORDER_STOP_MS = 1500 // MediaRecorder.onstop can hang on some mobile browsers; real flush is usually <500ms
 const STT_TIMEOUT_MS = 45000 // don't leave the UI on「正在识别…」forever
 
 export interface RecordingResult {
@@ -145,8 +142,11 @@ export function useRecorder(
       s.recorder = null
     }
 
-    // browser recognition: the transcript itself, or (with server recognition) just live feedback on desktop
-    if (SR && !(serverSTT && isMobile)) {
+    // browser recognition: gives live interim text. With server recognition it's a bonus —
+    // the server result is authoritative, so any browser-recognition error is ignored.
+    // (On Chrome in mainland China it can't reach Google and will just error out silently;
+    //  on Edge it usually works and gives instant interim feedback.)
+    if (SR) {
       const rec = new SR()
       const session = s
       rec.lang = locale
