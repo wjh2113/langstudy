@@ -3,6 +3,7 @@ from . import config
 from .languages import MODES, get_language
 from .ai import chat_json
 from .llm import LLMError
+from .note_quality import PATTERN_RULE, clean_notes
 
 SYSTEM = (
     "你是一名外语老师，为中文母语的学习者整理话题学习笔记。"
@@ -35,6 +36,8 @@ def build_prompt(content: dict) -> str:
 
 练习材料：
 {material_text(content)}
+
+{PATTERN_RULE}
 
 请整理这个话题的学习笔记：
 - vocabulary：{words} 个单词或短语，优先选材料里出现的，再补充这个话题常用、值得掌握的；{reading}
@@ -80,7 +83,7 @@ def normalize(data: dict) -> dict:
     ]
     if not (vocab or grammar or patterns):
         raise LLMError("没有生成学习笔记，请重试")
-    return {"summary": _s(data.get("summary")), "vocabulary": vocab, "grammar": grammar, "patterns": patterns}
+    return clean_notes({"summary": _s(data.get("summary")), "vocabulary": vocab, "grammar": grammar, "patterns": patterns})
 
 
 def generate_notes(content: dict) -> dict:

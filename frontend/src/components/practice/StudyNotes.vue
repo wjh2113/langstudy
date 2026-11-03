@@ -81,7 +81,7 @@
           <div v-for="(e, k) in p.examples" :key="k" class="ex-row">
             <span class="tag tag--soft">例句</span>
             <div>
-              <p :class="env.textClass">{{ e.text }} <PlayButton :id="`np-${uid}-${i}-${k}`" :text="e.text" :env="env" size="sm" /></p>
+              <p :class="env.textClass"><span v-if="e.text.trim() !== p.pattern.trim()">{{ e.text }}</span> <PlayButton :id="`np-${uid}-${i}-${k}`" :text="e.text" :env="env" size="sm" /></p>
               <p v-if="e.translation" class="translation">{{ e.translation }}</p>
             </div>
           </div>

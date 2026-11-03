@@ -452,6 +452,8 @@ def dimension_history(user_id: int, language: str, limit: int = 20):
 
 
 def save_notes(sid: str, notes: dict) -> str:
+    from .note_quality import clean_notes
+    notes = clean_notes(notes)
     at = _now()
     with _conn() as c:
         c.execute("UPDATE sessions SET notes=?, notes_at=? WHERE id=?", (json.dumps(notes, ensure_ascii=False), at, sid))
@@ -463,7 +465,8 @@ def get_notes(sid: str):
         row = c.execute("SELECT notes, notes_at FROM sessions WHERE id=?", (sid,)).fetchone()
     if not row or not row["notes"]:
         return None
-    return {"notes": json.loads(row["notes"]), "generatedAt": row["notes_at"]}
+    from .note_quality import clean_notes
+    return {"notes": clean_notes(json.loads(row["notes"])), "generatedAt": row["notes_at"]}
 
 
 def list_notes(user_id: int):

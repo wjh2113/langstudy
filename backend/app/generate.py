@@ -11,7 +11,10 @@ from .llm import LLMError
 # Model output sometimes splits "Mr. Stein" into two sentences at the title dot.
 _TITLE_END = re.compile(r"(?:Mr|Mrs|Ms|Dr|Prof|St|Sr|Jr)\.\s*$", re.I)
 
+from .note_quality import PATTERN_RULE
+
 SYSTEM = (
+    PATTERN_RULE +
     "你是一名经验丰富的外语口语与听力教练，为中文母语的学习者编写练习材料。"
     "材料必须自然、地道、贴合真实场景，难度严格符合指定级别。"
     "只输出一个 JSON 对象，不要输出任何其他文字。"
