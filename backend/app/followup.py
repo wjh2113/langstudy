@@ -3,6 +3,7 @@ from . import config
 from .languages import get_language
 from .ai import chat_json
 from .llm import LLMError
+from .translate import translate_many
 
 SYSTEM = (
     "你在和一名中文母语的外语学习者进行口语练习，扮演真实场景中的提问者（例如面试官）。"
@@ -36,7 +37,7 @@ def build_prompt(content: dict, question: str, answer: str, history: list) -> st
 2. 如果回答太短、跑题或听不懂，就礼貌地请对方展开或澄清；
 3. 只问一个问题，一两句话，难度符合学习者级别，不要重复之前问过的问题，不要评价或纠错。
 
-输出 JSON：{"text": "追问（目标语言）"}"""
+输出 JSON：{"text": "追问（目标语言）", "translation": "这句追问的简体中文"}"""
     )
     return "\n".join(lines)
 
@@ -49,9 +50,15 @@ def follow_up(content: dict, question: str, answer: str, history: list | None = 
     get_language(language)
     if config.demo_mode():
         text, translation = DEMO_FOLLOWUPS[language]
-        return {"text": text, "translation": ""}
+        return {"text": text, "translation": translation}
     data = chat_json(SYSTEM, build_prompt(content, question, answer[:2000], history or []), temperature=0.7, fast=True, task="followup")
     text = str(data.get("text") or "").strip()
     if not text:
         raise LLMError("没有生成追问，请重试")
-    return {"text": text, "translation": ""}  # translated on demand via /api/translate
+    translation = str(data.get("translation") or "").strip()
+    if not translation:
+        try:
+            translation = translate_many([text], language)[0]
+        except LLMError:
+            translation = ""
+    return {"text": text, "translation": translation}

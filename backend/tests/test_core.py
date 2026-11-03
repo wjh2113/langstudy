@@ -100,7 +100,7 @@ def test_evaluate_with_fake_llm(monkeypatch=None):
 def test_followup_demo_and_prompt():
     c = {"language": "ja", "level": "intermediate", "topic": "面接", "intro": "日企面试"}
     r = fu.follow_up(c, "自己紹介をお願いします。", "王です。エンジニアです。")
-    assert r["text"] and r["translation"] == ""  # translations are fetched on demand
+    assert r["text"] and r["translation"]  # 追问生成时就带中文
     try:
         fu.follow_up(c, "Q", "  ")
         assert False, "empty answer should fail"
@@ -118,7 +118,7 @@ def test_followup_with_fake_llm():
         r = fu.follow_up({"language": "en", "level": "beginner", "topic": "t"}, "Q", "I like my job")
     finally:
         config.demo_mode, fu.chat_json = orig_demo, orig_chat
-    assert r == {"text": "Which part did you enjoy most?", "translation": ""}
+    assert r == {"text": "Which part did you enjoy most?", "translation": "你最喜欢哪部分？"}
 
 
 def test_evaluate_labels_followup():

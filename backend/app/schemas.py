@@ -108,7 +108,7 @@ class ChatReplyReq(BaseModel):
 
 class SpokenText(BaseModel):
     text: str
-    translation: str = ""  # always empty now: translations are fetched on demand
+    translation: str = ""  # 生成时一并给出的简体中文；旧内容为空时前端仍会按需翻译
 
 
 class ChatReplyOut(SpokenText):
@@ -182,7 +182,7 @@ class SessionSummary(BaseModel):
 
 
 class TopicSummary(BaseModel):
-    """Latest session for one language/level/mode/topic combination."""
+    """一份话题材料。练习进度只属于当前用户，看不到别人的作答和成绩。"""
     id: str
     language: Optional[str] = None
     level: Optional[str] = None
@@ -196,6 +196,9 @@ class TopicSummary(BaseModel):
     hasNotes: bool
     answered: int = 0
     attempts: int = 1
+    mine: bool = True
+    practiceId: Optional[str] = None
+    ownerName: Optional[str] = None
 
 
 class PreviousSession(BaseModel):

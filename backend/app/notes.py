@@ -10,7 +10,8 @@ SYSTEM = (
     "内容要紧扣给定话题和练习材料，难度符合学习者级别，讲解用中文，例句用目标语言。只输出一个 JSON 对象。"
 )
 
-COUNTS = {"beginner": (8, 3, 4), "intermediate": (12, 4, 5), "advanced": (15, 5, 6)}
+# 单词、语法、句型。入门 8/5/6，中级 15/10/12，高级 20/12/15。
+COUNTS = {"beginner": (8, 5, 6), "intermediate": (15, 10, 12), "advanced": (20, 12, 15)}
 
 
 def material_text(content: dict) -> str:
@@ -20,9 +21,20 @@ def material_text(content: dict) -> str:
         parts = [s["text"] for s in content.get("sentences", [])] + [q["text"] for q in content.get("questions", [])]
     elif mode == "dialogue":
         parts = [f"{l['role']}: {l['text']}" for l in content.get("lines", [])]
+    elif mode == "dictation":
+        # 精听没有 questions，单词和句型要对照被挖空的句子
+        parts = [s.get("text", "") for s in content.get("sentences", []) if isinstance(s, dict)]
+    elif mode == "chat":
+        # 自由对话只有场景和开场，笔记仍要扣住这次对话的设定
+        parts = [content.get("scene") or "", content.get("goal") or ""]
+        for key in ("aiRole", "userRole"):
+            role = content.get(key) or {}
+            if isinstance(role, dict) and (role.get("name") or role.get("description")):
+                parts.append(f"{role.get('name', '')}：{role.get('description', '')}")
+        parts.append(content.get("opening") or "")
     else:
         parts = [q["text"] for q in content.get("questions", [])]
-    return "\n".join(parts)[:6000]
+    return "\n".join(p for p in parts if p)[:6000]
 
 
 def build_prompt(content: dict) -> str:
@@ -40,9 +52,9 @@ def build_prompt(content: dict) -> str:
 {PATTERN_RULE}
 
 请整理这个话题的学习笔记：
-- vocabulary：{words} 个单词或短语，优先选材料里出现的，再补充这个话题常用、值得掌握的；{reading}
-- grammar：{grammar} 个语法点，结合材料里的句子讲清楚用法和常见错误
-- patterns：{patterns} 个这个话题里最实用的句型（带可替换部分，如 "I'm responsible for + 名词/动名词"），学完能直接用在口语里
+- vocabulary：大约 {words} 个单词或短语，优先选材料里出现的，再补充这个话题常用、值得掌握的；{reading}。可以略少，不要为了凑数硬编
+- grammar：大约 {grammar} 个语法点，结合材料里的句子讲清楚用法和常见错误。可以略少
+- patterns：大约 {patterns} 个这个话题里最实用的句型（带可替换部分，如 "I'm responsible for + 名词/动名词"），学完能直接用在口语里。可以略少，不要为了凑数硬编
 
 输出 JSON：
 {{

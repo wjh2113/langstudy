@@ -61,6 +61,8 @@ def api_delete_topic(language: str, level: str, mode: str, topic: str, user: dic
     if not topic or not language or not level or not mode:
         bad("缺少话题、语言、级别或形式")
     ids = db.delete_sessions_by_topic(user["id"], language, level, mode, topic)
+    if not ids:
+        bad("只能删除自己生成或导入的话题", 403)
     for sid in ids:
         shutil.rmtree(audio_dir(sid), ignore_errors=True)
     return {"ok": True, "deleted": len(ids)}
@@ -103,6 +105,17 @@ def api_repeat(sid: str, user: dict = Depends(current_user)):
     """Practise the same material again (no model call; study notes are copied too)."""
     old = own_session(sid, user)
     return {"id": db.repeat_session(sid, user["id"]), "content": old["content"]}
+
+
+@router.post("/sessions/{sid}/begin", response_model=StartedSession)
+def api_begin(sid: str, user: dict = Depends(current_user)):
+    """打开一份话题。别人的话题会复制成自己的练习，不包含对方的作答和报告。"""
+    try:
+        new_id = db.begin_shared_topic(sid, user["id"])
+    except LookupError:
+        bad("话题不存在", 404)
+    started = db.get_session(new_id)
+    return {"id": new_id, "content": started["content"]}
 
 
 # ------------------------------------------------------------ study notes

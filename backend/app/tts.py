@@ -8,6 +8,7 @@ import asyncio
 import hashlib
 import os
 import threading
+from contextlib import asynccontextmanager
 
 from . import config
 from .languages import get_accent, get_language
@@ -54,7 +55,30 @@ async def _gateway(text: str, voice: str, rate: float) -> bytes:
 _prune_lock = threading.Lock()
 _writes_since_prune = 0
 PRUNE_EVERY = 20  # check the cache size every N new files
-_synth_locks: dict[str, asyncio.Lock] = {}
+_synth_locks: dict[str, list] = {}
+_synth_guard = threading.Lock()
+
+
+@asynccontextmanager
+async def _synth_lock(key):
+    # 预热线程与 HTTP 事件循环共享缓存；asyncio.Lock 不能跨事件循环使用。
+    with _synth_guard:
+        entry = _synth_locks.setdefault(key, [threading.Lock(), 0])
+        entry[1] += 1
+    acquired = False
+    try:
+        while not entry[0].acquire(blocking=False):
+            await asyncio.sleep(0.01)
+        acquired = True
+        yield
+    finally:
+        if acquired:
+            entry[0].release()
+        with _synth_guard:
+            entry[1] -= 1
+            if entry[1] == 0:
+                _synth_locks.pop(key, None)
+
 
 
 def prune_cache(max_bytes: int | None = None) -> int:
@@ -118,32 +142,27 @@ async def synthesize(text: str, language: str, voice_index: int = 0, rate: float
     if hit is not None:
         return hit
     # Two clicks on the same sentence share one synthesis, same as 小树学堂.
-    lock = _synth_locks.setdefault(key, asyncio.Lock())
-    try:
-        async with lock:
-            hit = _read_cached(path)
-            if hit is not None:
-                return hit
-            audio = await (_gateway(text, voice, rate) if provider == "gateway" else _edge(text, voice, rate))
-            if not audio:
-                raise TTSError("语音合成没有返回音频")
-            # Short first pieces (≤60 chars, same cut as the frontend) skip silence
-            # tightening so the opening clip returns sooner; longer lines still tighten.
-            if provider == "gateway" and len(text) > 60:
-                audio = await asyncio.to_thread(tighten_mp3, audio, text)
-            audio = bytes(audio)  # lameenc / some gateways return bytearray
-            tmp = path.with_suffix(".part")
-            tmp.write_bytes(audio)
-            os.replace(tmp, path)
-            global _writes_since_prune
-            _writes_since_prune += 1
-            if _writes_since_prune >= PRUNE_EVERY:
-                _writes_since_prune = 0
-                await asyncio.to_thread(prune_cache)
-            return audio
-    finally:
-        if not lock.locked():
-            _synth_locks.pop(key, None)
+    async with _synth_lock(key):
+        hit = _read_cached(path)
+        if hit is not None:
+            return hit
+        audio = await (_gateway(text, voice, rate) if provider == "gateway" else _edge(text, voice, rate))
+        if not audio:
+            raise TTSError("语音合成没有返回音频")
+        # Short first pieces (≤60 chars, same cut as the frontend) skip silence
+        # tightening so the opening clip returns sooner; longer lines still tighten.
+        if provider == "gateway" and len(text) > 60:
+            audio = await asyncio.to_thread(tighten_mp3, audio, text)
+        audio = bytes(audio)  # lameenc / some gateways return bytearray
+        tmp = path.with_suffix(".part")
+        tmp.write_bytes(audio)
+        os.replace(tmp, path)
+        global _writes_since_prune
+        _writes_since_prune += 1
+        if _writes_since_prune >= PRUNE_EVERY:
+            _writes_since_prune = 0
+            await asyncio.to_thread(prune_cache)
+        return audio
 
 
 def _read_cached(path) -> bytes | None:
@@ -151,3 +170,74 @@ def _read_cached(path) -> bytes | None:
         _touch(path)
         return path.read_bytes()
     return None
+
+
+def spoken_lines(content: dict) -> list[str]:
+    """练习里会点播放的句子：短文、台词、问题、开场白。"""
+    texts = []
+    for key in ("sentences", "lines", "questions"):
+        for item in content.get(key) or []:
+            if isinstance(item, dict) and str(item.get("text") or "").strip():
+                texts.append(str(item["text"]).strip())
+    opening = str(content.get("opening") or "").strip()
+    if opening:
+        texts.append(opening)
+    return texts
+
+
+async def warm_default_audio(content: dict) -> None:
+    """按默认语速、默认口音，把两种音色都先合成进缓存。换口音或语速时仍会现合成。"""
+    if config.demo_mode() or not config.TTS_ENABLED:
+        return
+    from .speech_text import split_for_tts
+
+    language = content.get("language") or "en"
+    pieces = []
+    for text in spoken_lines(content):
+        pieces.extend(split_for_tts(text) or [text])
+    if not pieces:
+        return
+    voices = get_language(language).get("voices") or [""]
+    indexes = list(range(min(2, len(voices)))) or [0]
+    sem = asyncio.Semaphore(3)
+
+    async def one(text: str, voice_index: int):
+        async with sem:
+            try:
+                await synthesize(text, language, voice_index, 1.0, "default")
+            except TTSError:
+                return
+
+    await asyncio.gather(*(one(text, i) for text in pieces for i in indexes))
+
+
+# 有界独立队列：预热不能占住出题线程，也不能无限积压。
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
+import logging
+
+_warm_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tts-warm")
+_warm_slots = threading.BoundedSemaphore(8)
+
+
+def schedule_audio_warm(content: dict) -> bool:
+    if config.demo_mode() or not config.TTS_ENABLED or not _warm_slots.acquire(blocking=False):
+        return False
+    context = copy_context()
+
+    def run():
+        try:
+            async def warm():
+                await asyncio.wait_for(warm_default_audio(content), timeout=120)
+            context.run(asyncio.run, warm())
+        except Exception:
+            logging.getLogger(__name__).warning("Audio warmup failed", exc_info=True)
+        finally:
+            _warm_slots.release()
+
+    try:
+        _warm_pool.submit(run)
+    except RuntimeError:
+        _warm_slots.release()
+        return False
+    return True

@@ -39,14 +39,18 @@ PROMPT = """你是 LangStudy 的出题编辑。请为中文母语的学习者写
 - 台词、问题、短文、例句用目标语言，要自然、口语化，难度符合级别。
 - 场景、提示、讲解、释义、用法用中文。
 - 英语读音写美式音标，日语读音写假名。
-- 单词、语法、句型的数量大约是：入门 8 个单词、3 个语法、4 个句型；中级 12 / 6 / 8；高级 15 / 8 / 10。写多了也会全部导入，不用特意删。有课件时按课件里实际出现的来写，更多时只留这一课最需要开口用的，更少时不要为了凑数去编。没有课件时按这个数量写满。
-- 话题问答写 5 个问题。短文：入门 6 到 8 句，中级 8 到 10 句，高级 10 到 12 句，并配 3 个听力问题。情景对话两个角色交替，从 A 开始，入门 8 句、中级 10 句、高级 12 句。精听每句挖 1 到 2 个词，挖空的词必须和句子里的写法完全一样。自由对话只写设定和一句开场白，开场白以问题结尾。
+- 单词、语法、句型的数量大约是：入门 8 个单词、5 个语法、6 个句型；中级 15 个单词、10 个语法、12 个句型；高级 20 个单词、12 个语法、15 个句型。写多了也会全部导入，不用特意删。有课件时按课件里实际出现的来写，更多时只留这一课最需要开口用的，更少时不要为了凑数去编。没有课件时按这个数量写满。
+- 篇幅大约是：入门 15，中级 20，高级 30。可以少 2 到 3 或多 2 到 3，按内容自然收住，不要为了凑数把一句拆开或硬编相似的内容。短文按这个数量写满句子，并配 3 个听力问题。
+- 话题问答按这个数量写问题。情景对话两个角色交替，从 A 开始，句数相同。精听句数也相同，每句挖 1 到 2 个词，挖空的词必须和句子里的写法完全一样。自由对话只写设定和一句开场白，开场白以问题结尾；目标要写得具体，让对话能自然进行这么多轮，谈完就可以结束。
 - 同一个话题要几种练习时，每种练习单独写一个以「# 」开头的块，单词、语法、句型可以重复。不同级别也一样，每种级别单独一块。
 - 几个话题、几种级别、几种形式可以写在同一个文件里。每一个「# 」开头的块导入后都是一份独立练习，会一起导入。
+- 重点单词写在「## 单词」，重点语法写在「## 语法」，重点句型写在「## 句型」。每个块都要有这三节，练习页和学习笔记会直接显示。有课件时用课件里的；没有课件时按上面的数量写，可以略少，不要为了凑数硬编。
+- 句子、台词、问题、开场白都要带简体中文，紧接着写一行「中文: 译文」。练习页直接显示这行，不要留空。
+- 话题问答和短文的每个问题都要写「示范回答:」一句完整的目标语回答，下一行写「示范中文:」它的简体中文。这是给学习者参考的，不是唯一答案。
 
 句型的用法要逐条说明具体交际目的或搭配，禁止“根据具体语境完成表达与回应”等套话，无法确定时留空。例句不要照抄句型标题。
 
-每个话题按这个结构写。没有的小节不要写。
+每个话题按这个结构写。跟所选形式无关的小节不要写，但每个块都要有「单词」「语法」和「句型」。话题问答和短文的每个问题都要有示范回答。
 
 # 话题名
 
@@ -65,12 +69,17 @@ PROMPT = """你是 LangStudy 的出题编辑。请为中文母语的学习者写
 ## 问题
 
 ### 目标语言的问题
+中文: 这句的简体中文
 提示: 中文，可以从哪些角度回答
-参考答案: 短文和精听才需要，写目标语言的简短要点
+示范回答: 一句完整的目标语回答
+示范中文: 示范回答的简体中文
+参考答案: 短文才需要，写目标语言的简短要点
 
 ## 短文
 
-一句一行。句与句之间空一行。
+一句一段。下一行写中文，再空一行写下句。
+
+中文: 这句的简体中文
 
 精听改成这样，挖空的词用竖线分开：
 
@@ -93,9 +102,11 @@ PROMPT = """你是 LangStudy 的出题编辑。请为中文母语的学习者写
 
 ### A
 目标语言的一句台词
+中文: 这句台词的简体中文
 
 ### B
 目标语言的一句台词
+中文: 这句台词的简体中文
 
 ## 目标
 
@@ -103,7 +114,7 @@ PROMPT = """你是 LangStudy 的出题编辑。请为中文母语的学习者写
 
 ## 开场
 
-自由对话才写。AI 的开场白，一两句，以问题结尾。
+自由对话才写。AI 的开场白，一两句，以问题结尾。下一行写「中文: 开场白的简体中文」。
 
 ## 单词
 
@@ -145,10 +156,16 @@ Ordering Dinner
 ## 问题
 
 ### What kind of dishes usually catch your eye first, and why?
+中文: 你通常最先注意到什么样的菜，为什么？
 提示: 可以说口味、食材或者价格。
+示范回答: I usually notice spicy dishes first, because I like strong flavors.
+示范中文: 我通常先注意到辣的菜，因为我喜欢味道重一点的。
 
 ### Describe one dish you might order tonight.
+中文: 描述一道你今晚可能会点的菜。
 提示: 说说名字、味道，以及为什么点它。
+示范回答: I might order the tomato soup, because it looks light and warm.
+示范中文: 我可能会点番茄汤，因为它看起来清淡又暖和。
 
 ## 单词
 
@@ -185,8 +202,10 @@ _LEVELS = {
     "intermediate": "intermediate", "中级": "intermediate",
     "advanced": "advanced", "高级": "advanced",
 }
-_KEYS = {"读音", "词性", "释义", "例句", "翻译", "提示", "参考答案", "挖空", "名字", "说明", "易错", "讲解", "用法",
+_KEYS = {"读音", "词性", "释义", "例句", "翻译", "中文", "提示", "参考答案", "示范回答", "示范中文", "挖空", "名字", "说明", "易错", "讲解", "用法",
          "语言", "级别", "形式"}
+# 模型有时会把小节写成「重点单词」，导入时仍归到原来的单词 / 句型 / 语法
+_SECTION_ALIAS = {"重点单词": "单词", "重点句型": "句型", "重点语法": "语法"}
 
 
 def read_upload(filename: str, data: bytes) -> list[str]:
@@ -263,7 +282,7 @@ def _build(block: str) -> dict:
     current = "_meta"
     for line in lines[1:]:
         if line.startswith("## "):
-            current = line[3:].strip()
+            current = _SECTION_ALIAS.get(line[3:].strip(), line[3:].strip())
             sections[current] = []
         else:
             sections.setdefault(current, []).append(line)
@@ -284,7 +303,7 @@ def _build(block: str) -> dict:
         data["intro"] = _plain(sections.get("场景", []))
         data["questions"] = _questions(sections.get("问题", []), "tip")
     elif mode == "article":
-        data["sentences"] = [{"text": s} for s in _paragraphs(sections.get("短文", []))]
+        data["sentences"] = _paragraphs(sections.get("短文", []))
         data["questions"] = _questions(sections.get("问题", []), "answerHint")
     elif mode == "dictation":
         data["sentences"] = _dictation(sections.get("短文", []))
@@ -298,7 +317,10 @@ def _build(block: str) -> dict:
         roles = _roles(sections.get("角色", []), chat=True)
         data["aiRole"] = roles[0]
         data["userRole"] = roles[1]
-        data["opening"] = _plain(sections.get("开场", []))
+        opening_meta, opening_prose = _fields(sections.get("开场", []))
+        data["opening"] = " ".join(opening_prose).strip()
+        if _one(opening_meta, "中文"):
+            data["openingTranslation"] = _one(opening_meta, "中文")
     content = normalize(mode, data)
     content.update({"language": language, "level": level, "topic": topic, "mode": mode})
     notes_data = _notes(sections)
@@ -318,14 +340,21 @@ def _questions(lines: list[str], hint_key: str) -> list[dict]:
         hint = _one(meta, "参考答案") if hint_key == "answerHint" else _one(meta, "提示")
         if hint_key == "answerHint" and not hint:
             hint = _one(meta, "提示")
-        out.append({"text": text, hint_key: hint})
+        item = {"text": text, hint_key: hint}
+        if _one(meta, "中文"):
+            item["translation"] = _one(meta, "中文")
+        if _one(meta, "示范回答"):
+            item["modelAnswer"] = _one(meta, "示范回答")
+        if _one(meta, "示范中文"):
+            item["modelAnswerTranslation"] = _one(meta, "示范中文")
+        out.append(item)
     return out
 
 
 def _dictation(lines: list[str]) -> list[dict]:
     found = _items(lines)
     if len(found) == 1 and found[0][0] is None:
-        return [{"text": s, "blanks": []} for s in _paragraphs(lines)]
+        return [{**s, "blanks": []} for s in _paragraphs(lines)]
     out = []
     for heading, body in found:
         meta, prose = _fields(body)
@@ -336,7 +365,10 @@ def _dictation(lines: list[str]) -> list[dict]:
             if piece and piece in text and piece not in blanks:
                 blanks.append(piece)
         if text:
-            out.append({"text": text, "blanks": blanks[:2]})
+            item = {"text": text, "blanks": blanks[:2]}
+            if _one(meta, "中文"):
+                item["translation"] = _one(meta, "中文")
+            out.append(item)
     return out
 
 
@@ -365,9 +397,13 @@ def _lines(lines: list[str]) -> list[dict]:
     out = []
     for heading, body in _items(lines):
         role = (heading or "").strip().upper()
-        text = _plain(body)
+        meta, prose = _fields(body)
+        text = " ".join(prose).strip()
         if role in {"A", "B"} and text:
-            out.append({"role": role, "text": text})
+            item = {"role": role, "text": text}
+            if _one(meta, "中文"):
+                item["translation"] = _one(meta, "中文")
+            out.append(item)
     return out
 
 
@@ -463,12 +499,43 @@ def _plain(lines: list[str]) -> str:
     return " ".join(prose).strip()
 
 
-def _paragraphs(lines: list[str]) -> list[str]:
+def _paragraphs(lines: list[str]) -> list[dict]:
+    """一句一段。段内或下一段的「中文:」是这句的译文。"""
     text = "\n".join(lines).strip()
     if not text:
         return []
-    parts = re.split(r"\n\s*\n", text)
-    return [" ".join(part.split()) for part in parts if part.strip()]
+    out = []
+    pending = None
+    for part in re.split(r"\n\s*\n", text):
+        rows = [ln.strip() for ln in part.splitlines() if ln.strip()]
+        if not rows:
+            continue
+        if len(rows) == 1 and re.match(r"^中文[:：]", rows[0]):
+            tr = re.sub(r"^中文[:：]\s*", "", rows[0]).strip()
+            if pending is not None:
+                if tr:
+                    pending["translation"] = tr
+                out.append(pending)
+                pending = None
+            continue
+        body, tr = [], ""
+        for ln in rows:
+            matched = re.match(r"^中文[:：]\s*(.*)$", ln)
+            if matched:
+                tr = matched.group(1).strip()
+            else:
+                body.append(ln)
+        sentence = " ".join(body).strip()
+        if not sentence:
+            continue
+        if pending is not None:
+            out.append(pending)
+        pending = {"text": sentence}
+        if tr:
+            pending["translation"] = tr
+    if pending is not None:
+        out.append(pending)
+    return out
 
 
 def _bar(value: str) -> tuple[str, str]:

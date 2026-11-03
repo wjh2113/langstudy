@@ -75,7 +75,8 @@ def test_chat_reply_demo_and_rules():
 
 def test_chat_prompt_wraps_up_long_conversations():
     hist = [{"role": "ai", "text": "Q"}]
-    for i in range(conversation.MAX_USER_TURNS):
+    _low, high = conversation._turn_cap(CHAT["level"])
+    for i in range(high):
         hist += [{"role": "user", "text": f"a{i}"}, {"role": "ai", "text": "q"}]
     p = conversation.build_prompt(CHAT, hist[:-1])
     assert "收尾告别" in p and "Alex" in p

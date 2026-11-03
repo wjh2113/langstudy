@@ -216,13 +216,13 @@ def revoke_invite(code: str):
 
 
 # --------------------------------------------------------------- sessions
-def create_session(content: dict, user_id: int) -> str:
+def create_session(content: dict, user_id: int, source_id: str | None = None) -> str:
     sid = uuid.uuid4().hex[:12]
     with _conn() as c:
         c.execute(
-            "INSERT INTO sessions (id, created_at, language, level, mode, topic, title, content, user_id) VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO sessions (id, created_at, language, level, mode, topic, title, content, user_id, source_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (sid, _now(), content.get("language"), content.get("level"), content.get("mode"),
-             content.get("topic"), content.get("title"), json.dumps(content, ensure_ascii=False), user_id),
+             content.get("topic"), content.get("title"), json.dumps(content, ensure_ascii=False), user_id, source_id),
         )
     return sid
 
@@ -244,7 +244,8 @@ def previous_session(user_id: int, language: str, level: str, mode: str, topic: 
 def repeat_session(sid: str, user_id: int) -> str:
     """A fresh attempt at an earlier session's material (and its study notes) — no model call."""
     old = get_session(sid)
-    new_id = create_session(old["content"], user_id)
+    # 从别人的话题复制来的练习，再练一次仍然挂在原话题上，不会变成自己新生成的话题。
+    new_id = create_session(old["content"], user_id, source_id=old.get("sourceId"))
     with _conn() as c:
         c.execute("UPDATE sessions SET notes=(SELECT notes FROM sessions WHERE id=?), notes_at=(SELECT notes_at FROM sessions WHERE id=?) WHERE id=?",
                   (sid, sid, new_id))
@@ -316,6 +317,7 @@ def get_session(sid: str):
     return {
         "id": row["id"],
         "userId": row["user_id"],
+        "sourceId": row["source_id"] if "source_id" in row.keys() else None,
         "createdAt": row["created_at"],
         "content": json.loads(row["content"]),
         "turns": [json.loads(r["data"]) for r in turn_rows],
@@ -398,41 +400,119 @@ def _topic_key(r) -> tuple:
     return (r["language"] or "", r["level"] or "", r["mode"] or "", (r["topic"] or "").strip().lower())
 
 
+def _base_topic_name(topic: str) -> str:
+    """去掉「｜短文」这类形式后缀，同一话题的各级别、各形式算一个话题。"""
+    name = (topic or "").strip()
+    for sep in ("｜", "|"):
+        if sep in name:
+            name = name.split(sep, 1)[0].strip()
+            break
+    return name or "未命名"
+
+
+def _owner_topic_key(r) -> tuple:
+    return (r["user_id"], r["language"] or "", r["level"] or "", r["mode"] or "", (r["topic"] or "").strip().lower())
+
+
 def list_topics(user_id: int, limit: int = 200) -> list[dict]:
-    """One row per language/level/mode/topic, using the most recently touched session."""
+    """所有人生成或导入的话题都能看见。成绩、作答次数只统计当前用户自己的练习。"""
     with _conn() as c:
         rows = c.execute(
-            """SELECT s.id, s.created_at, s.updated_at, s.language, s.level, s.mode, s.topic, s.title, s.overall,
-                      s.report IS NOT NULL AS done, s.notes IS NOT NULL AS has_notes,
+            """SELECT s.id, s.user_id, s.created_at, s.updated_at, s.language, s.level, s.mode, s.topic, s.title,
+                      s.overall, s.report IS NOT NULL AS done, s.notes IS NOT NULL AS has_notes, u.username,
                       (SELECT COUNT(*) FROM turns t WHERE t.session_id=s.id) AS answered
-               FROM sessions s WHERE s.user_id=?
+               FROM sessions s LEFT JOIN users u ON u.id=s.user_id
+               WHERE s.source_id IS NULL
                ORDER BY COALESCE(s.updated_at, s.created_at) DESC""",
+        ).fetchall()
+        practices = c.execute(
+            """SELECT id, source_id, created_at, updated_at, overall, report IS NOT NULL AS done,
+                      (SELECT COUNT(*) FROM turns t WHERE t.session_id=sessions.id) AS answered
+               FROM sessions
+               WHERE user_id=? AND source_id IS NOT NULL
+               ORDER BY COALESCE(updated_at, created_at) DESC""",
             (user_id,),
         ).fetchall()
-    counts: dict[tuple, int] = {}
+    by_source: dict[str, list] = {}
+    for p in practices:
+        by_source.setdefault(p["source_id"], []).append(p)
+    groups: dict[tuple, list] = {}
     for r in rows:
         if not (r["topic"] or "").strip():
             continue
-        key = _topic_key(r)
-        counts[key] = counts.get(key, 0) + 1
-    out, seen = [], set()
-    for r in rows:
-        if not (r["topic"] or "").strip():
-            continue
-        key = _topic_key(r)
-        if key in seen:
-            continue
-        seen.add(key)
+        groups.setdefault(_owner_topic_key(r), []).append(r)
+    out = []
+    for key, items in groups.items():
+        latest = items[0]
+        mine = latest["user_id"] == user_id
+        if mine:
+            row = latest
+            practice_id = None
+            attempts = len(items)
+        else:
+            own = []
+            for item in items:
+                own.extend(by_source.get(item["id"], []))
+            own.sort(key=lambda p: p["updated_at"] or p["created_at"] or "", reverse=True)
+            attempts = len(own)
+            practice_id = own[0]["id"] if own else None
+            row = own[0] if own else None
+        material = latest
+        stat = row if mine else row
         out.append({
-            "id": r["id"], "language": r["language"], "level": r["level"], "mode": r["mode"],
-            "topic": r["topic"], "title": r["title"], "overall": r["overall"],
-            "createdAt": r["created_at"], "updatedAt": r["updated_at"],
-            "done": bool(r["done"]), "hasNotes": bool(r["has_notes"]), "answered": r["answered"],
-            "attempts": counts[key],
+            "id": material["id"], "language": material["language"], "level": material["level"],
+            "mode": material["mode"], "topic": material["topic"], "title": material["title"],
+            "overall": stat["overall"] if stat is not None and (mine or practice_id) else None,
+            "createdAt": material["created_at"], "updatedAt": (stat["updated_at"] if stat is not None and not mine else material["updated_at"]),
+            "done": bool(stat["done"]) if stat is not None and (mine or practice_id) else False,
+            "hasNotes": bool(material["has_notes"]),
+            "answered": stat["answered"] if stat is not None and (mine or practice_id) else 0,
+            "attempts": attempts,
+            "mine": mine,
+            "practiceId": practice_id,
+            "ownerName": None if mine else (latest["username"] or ""),
         })
-        if len(out) >= limit:
-            break
-    return out
+    # 按话题截断，并保留该话题的全部级别和形式。排序仍按最近有变动的在前。
+    out.sort(key=lambda item: item["updatedAt"] or item["createdAt"] or "", reverse=True)
+    kept, bases = [], []
+    for item in out:
+        base = _base_topic_name(item["topic"])
+        owner = item["ownerName"] or ""
+        bucket = base if item["mine"] else f"{owner}\0{base}"
+        if bucket not in bases:
+            if len(bases) >= limit:
+                continue
+            bases.append(bucket)
+        if bucket in bases[:limit]:
+            kept.append(item)
+    return kept
+
+
+def begin_shared_topic(sid: str, user_id: int) -> str:
+    """打开别人的话题时复制材料，生成自己的练习，不复制对方的作答和报告。"""
+    src = get_session(sid)
+    if not src or src.get("sourceId"):
+        raise LookupError
+    if src["userId"] == user_id:
+        return sid
+    ids = session_ids_by_topic(src["userId"], src["content"].get("language"), src["content"].get("level"),
+                               src["content"].get("mode"), src["content"].get("topic") or "")
+    with _conn() as c:
+        row = c.execute(
+            f"""SELECT id, report FROM sessions
+                WHERE user_id=? AND source_id IN ({",".join("?" * len(ids))})
+                ORDER BY COALESCE(updated_at, created_at) DESC LIMIT 1""",
+            (user_id, *ids),
+        ).fetchone() if ids else None
+    if row and not row["report"]:
+        return row["id"]
+    new_id = create_session(src["content"], user_id, source_id=sid)
+    with _conn() as c:
+        c.execute(
+            "UPDATE sessions SET notes=(SELECT notes FROM sessions WHERE id=?), notes_at=(SELECT notes_at FROM sessions WHERE id=?) WHERE id=?",
+            (sid, sid, new_id),
+        )
+    return new_id
 
 
 def dimension_history(user_id: int, language: str, limit: int = 20):
@@ -588,15 +668,40 @@ def delete_session(sid: str):
 
 
 def session_ids_by_topic(user_id: int, language: str, level: str, mode: str, topic: str) -> list[str]:
-    """All of this user's sessions that share language + level + mode + topic."""
+    """这个用户自己生成或导入的练习，不含从别人话题复制来的记录。"""
     with _conn() as c:
         rows = c.execute(
             """SELECT id FROM sessions
-               WHERE user_id=? AND language=? AND level=? AND mode=?
+               WHERE user_id=? AND source_id IS NULL AND language=? AND level=? AND mode=?
                  AND lower(trim(topic))=lower(trim(?))""",
             (user_id, language, level, mode, (topic or "").strip()),
         ).fetchall()
     return [r["id"] for r in rows]
+
+
+def replace_imported_session(content: dict, user_id: int, notes: dict | None) -> tuple[str, list[str]]:
+    """补全成功后原子替换：写入失败时保留旧练习；录音由调用方在提交后清理。"""
+    from .note_quality import clean_notes
+    sid = uuid.uuid4().hex[:12]
+    blob = json.dumps(content, ensure_ascii=False)
+    note_blob = json.dumps(clean_notes(notes), ensure_ascii=False) if notes else None
+    now = _now()
+    with _exclusive() as c:
+        old = c.execute(
+            """SELECT id FROM sessions WHERE user_id=? AND source_id IS NULL
+               AND language=? AND level=? AND mode=? AND lower(trim(topic))=lower(trim(?))""",
+            (user_id, content.get("language"), content.get("level"), content.get("mode"), content.get("topic", "")),
+        ).fetchall()
+        ids = [r["id"] for r in old]
+        c.executemany("DELETE FROM sessions WHERE id=?", [(i,) for i in ids])
+        c.execute(
+            """INSERT INTO sessions
+               (id, created_at, language, level, mode, topic, title, content, user_id, notes, notes_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (sid, now, content.get("language"), content.get("level"), content.get("mode"),
+             content.get("topic"), content.get("title"), blob, user_id, note_blob, now if note_blob else None),
+        )
+    return sid, ids
 
 
 def delete_sessions_by_topic(user_id: int, language: str, level: str, mode: str, topic: str) -> list[str]:

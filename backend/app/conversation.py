@@ -4,8 +4,16 @@ from .demo import DEMO_REPLIES
 from .languages import get_language
 from .ai import chat_json
 from .llm import LLMError
+from .translate import translate_many
 
-MAX_USER_TURNS = 12  # wrap the conversation up after this many learner turns
+from .generate import length_span, passage_length
+
+# 大约进行这么多轮学习者发言，允许上下差 3 轮；到上限才强制收尾。
+def _turn_cap(level: str) -> tuple[int, int]:
+    low, high = length_span(level or "intermediate")
+    return low, high
+
+
 RECENT_ROUNDS = 6  # only the latest rounds go to the model verbatim; older ones as a one-line summary
 RECENT_MESSAGES = RECENT_ROUNDS * 2
 
@@ -33,15 +41,19 @@ def build_prompt(content: dict, history: list, summary: str = "") -> str:
     for h in history[-RECENT_MESSAGES:]:
         who = "你" if h.get("role") == "ai" else "学习者"
         lines.append(f"{who}：{h.get('text', '')}")
-    wrap = user_turns >= MAX_USER_TURNS
+    low, high = _turn_cap(content.get("level") or "intermediate")
+    about = passage_length(content.get("level") or "intermediate")
+    wrap = user_turns >= high
     # once the next turn will push messages out of the window, ask for a refreshed summary
     need_summary = len(history) + 1 > RECENT_MESSAGES
     lines.append(
         "\n请给出你的下一句回复。"
-        + ("对话已经很长了，请自然地收尾告别，end 设为 true。" if wrap else
-           "如果对话已经自然结束（比如双方已告别、目标已完成），就简短收尾并把 end 设为 true，否则为 false。")
-        + ('\n输出 JSON：{"text": "回复（目标语言）", "end": false, "summary": "用一句中文概括到目前为止整段对话的要点"}'
-           if need_summary else '\n输出 JSON：{"text": "回复（目标语言）", "end": false}')
+        + (f"这场对话希望大约进行 {about} 轮。学习者已经说了 {user_turns} 轮。"
+           + ("已经到上限了，请自然地收尾告别，end 设为 true。" if wrap else
+              f"场景里还有没谈到的具体内容（原因、例子、下一步）就继续问，不要刚开场就结束。"
+              f"如果目标已经谈完，可以在 {low} 轮前后自然收尾；不到 {low} 轮时，只有学习者明确要结束才把 end 设为 true，否则为 false。"))
+        + ('\n输出 JSON：{"text": "回复（目标语言）", "translation": "这句回复的简体中文", "end": false, "summary": "用一句中文概括到目前为止整段对话的要点"}'
+           if need_summary else '\n输出 JSON：{"text": "回复（目标语言）", "translation": "这句回复的简体中文", "end": false}')
     )
     return "\n".join(lines)
 
@@ -57,10 +69,16 @@ def reply(content: dict, history: list, summary: str = "") -> dict:
         replies = DEMO_REPLIES.get(language, DEMO_REPLIES["en"])
         n = sum(1 for h in history if h.get("role") == "user")
         text, translation = replies[min(n - 1, len(replies) - 1)]
-        return {"text": text, "translation": "", "end": n >= len(replies), "summary": ""}
+        return {"text": text, "translation": translation, "end": n >= len(replies), "summary": ""}
     data = chat_json(SYSTEM, build_prompt(content, history, (summary or "")[:500]), temperature=0.8, fast=True, task="chat")
     text = str(data.get("text") or "").strip()
     if not text:
         raise LLMError("AI 没有回复，请重试")
-    return {"text": text, "translation": "", "end": bool(data.get("end")),
+    translation = str(data.get("translation") or "").strip()
+    if not translation:
+        try:
+            translation = translate_many([text], language)[0]
+        except LLMError:
+            translation = ""
+    return {"text": text, "translation": translation, "end": bool(data.get("end")),
             "summary": str(data.get("summary") or summary or "").strip()[:500]}

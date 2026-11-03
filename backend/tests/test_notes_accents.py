@@ -19,7 +19,7 @@ def test_prompt_and_normalize():
     p = notes.build_prompt(CONTENT)
     assert "A: What can I get you?" in p and "8 个单词" in p and "音标" in p
     jp = notes.build_prompt({**CONTENT, "language": "ja", "level": "advanced"})
-    assert "假名" in jp and "15 个单词" in jp
+    assert "假名" in jp and "20 个单词" in jp
     n = notes.normalize({
         "summary": " s ", "vocabulary": [{"word": "latte", "meaning": "拿铁"}, {"meaning": "no word"}],
         "grammar": [{"point": "Could I", "examples": ["Could I have tea?", {"text": "x", "translation": "y"}]}],

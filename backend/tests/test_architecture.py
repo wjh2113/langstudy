@@ -159,13 +159,21 @@ def test_translate_on_demand_is_cached_and_batched():
         config.demo_mode, translate.chat_json = orig_demo, orig_chat
 
 
-def test_generated_material_has_no_translations():
+def test_generated_material_includes_translations():
     from app import generate as gen
 
     for mode in ("article", "dialogue", "questions", "chat", "dictation"):
         c = gen.generate("en", "beginner", mode, "面试", 3)
-        assert '"translation"' not in json.dumps(c) and "openingTranslation" not in c, mode
-        assert "translation" not in gen.build_prompt("en", "beginner", mode, "t", 3).split("不需要中文翻译")[1]
+        blob = json.dumps(c, ensure_ascii=False)
+        if mode == "chat":
+            assert c.get("openingTranslation"), mode
+        else:
+            assert '"translation"' in blob, mode
+        if mode in ("article", "questions"):
+            assert any(q.get("modelAnswer") for q in c.get("questions") or []), mode
+        prompt = gen.build_prompt("en", "beginner", mode, "t", 3)
+        assert "简体中文" in prompt
+        assert "grammar" in prompt
 
 
 def test_json_repair_before_retry():

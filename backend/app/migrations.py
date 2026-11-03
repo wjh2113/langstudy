@@ -214,6 +214,13 @@ def m007_share_links(c):
     c.execute("CREATE UNIQUE INDEX idx_sessions_share ON sessions(share_token) WHERE share_token IS NOT NULL")
 
 
+def m009_session_source(c):
+    """别人练习共享话题时另建记录，source_id 指向原话题，不带走原作者的作答和报告。"""
+    if "source_id" not in _cols(c, "sessions"):
+        c.execute("ALTER TABLE sessions ADD COLUMN source_id TEXT")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(user_id, source_id)")
+
+
 def m008_courses(c):
     """A course pack: several practices made from one uploaded worksheet."""
     _script(c, """
@@ -240,6 +247,7 @@ MIGRATIONS = [
     (6, m006_jobs),
     (7, m007_share_links),
     (8, m008_courses),
+    (9, m009_session_source),
 ]
 
 

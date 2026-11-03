@@ -6,13 +6,14 @@ from ..coach import recommend
 from ..conversation import reply as chat_reply
 from ..evaluate import evaluate
 from ..followup import follow_up
-from ..generate import generate
+from ..generate import generate_with_notes
 from ..llm import LLMError
 from ..mistakes import collect_mistakes
 from ..translate import translate_many
 from ..deps import bad, current_user, own_session
 from ..schemas import (ChatReplyOut, ChatReplyReq, EvaluateReq, FollowUpReq, GenerateReq, Job, JobRef,
                        SpokenText, TranslateOut, TranslateReq)
+from ..tts import schedule_audio_warm
 
 router = APIRouter(prefix="/api", tags=["practice"])
 
@@ -33,8 +34,13 @@ def _llm_errors(fn):
 def api_generate(req: GenerateReq, user: dict = Depends(current_user)):
     """Starts generating material; poll /api/jobs/{jobId}. The result is {id, content}."""
     def work():
-        content = generate(req.language, req.level, req.mode, req.topic, req.count, req.focus)
-        return {"id": db.create_session(content, user["id"]), "content": content}
+        content, study_notes = generate_with_notes(req.language, req.level, req.mode, req.topic, req.count, req.focus)
+        sid = db.create_session(content, user["id"])
+        # 重点单词、语法和句型记在笔记里，不写进练习正文
+        if study_notes and (study_notes.get("vocabulary") or study_notes.get("grammar") or study_notes.get("patterns")):
+            db.save_notes(sid, study_notes)
+        schedule_audio_warm(content)
+        return {"id": sid, "content": content}
 
     return {"jobId": jobs.submit("generate", user, work)}
 

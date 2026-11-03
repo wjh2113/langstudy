@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api", tags=["courses"])
 
 @router.post("/courses", response_model=JobRef)
 async def api_create_course(
-    file: UploadFile | None = File(None),
+    file: list[UploadFile] | None = File(None),
     text: str = Form(""),
     language: str = Form("en"),
     level: str = Form("intermediate"),
@@ -26,18 +26,30 @@ async def api_create_course(
         get_language(language)
     except ValueError as e:
         bad(e)
-    source, source_name = "", ""
-    if file is not None and file.filename:
-        data = await file.read()
-        if data:
-            source_name = Path(file.filename).name
-            try:
-                source = extract(source_name, data)
-            except ExtractError as e:
-                bad(e)
-    if not source and text.strip():
-        source = text.strip()[:40000]
+    # 一次可以选多个课件，文字拼在一起再归类。
+    uploads = file if isinstance(file, list) else []
+    chunks: list[str] = []
+    names: list[str] = []
+    for item in uploads:
+        if item is None or not item.filename:
+            continue
+        data = await item.read()
+        if not data:
+            continue
+        source_name = Path(item.filename).name
+        try:
+            chunks.append(f"--- {source_name} ---\n{extract(source_name, data)}")
+        except ExtractError as e:
+            bad(f"{source_name}：{e}" if len(uploads) > 1 else e)
+        names.append(source_name)
+    source = "\n\n".join(chunks).strip()
+    source_name = "、".join(names)[:120]
+    if text.strip():
+        pasted = text.strip()[:40000]
+        source = f"{source}\n\n{pasted}".strip() if source else pasted
         source_name = source_name or "粘贴的文字"
+    if len(source) > 40000:
+        source = source[:40000]
     if len(source) < 40:
         bad("请上传 PDF、PPTX、DOCX，或粘贴一段课件文字")
 

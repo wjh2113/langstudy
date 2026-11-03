@@ -29,6 +29,8 @@ Ordering Dinner
 
 ### What kind of dishes usually catch your eye first, and why?
 提示: 可以说口味或价格。
+示范回答: I usually notice spicy dishes first.
+示范中文: 我通常先注意到辣的菜。
 
 ### Describe one dish you might order tonight.
 提示: 说说名字和味道。
@@ -97,6 +99,8 @@ def test_questions_and_notes():
     assert content["mode"] == "questions" and content["language"] == "en"
     assert content["topic"] == "餐厅点餐" and len(content["questions"]) == 2
     assert content["questions"][0]["tip"].startswith("可以说")
+    assert content["questions"][0]["modelAnswer"].startswith("I usually notice")
+    assert content["questions"][0]["modelAnswerTranslation"] == "我通常先注意到辣的菜。"
     assert notes["vocabulary"][0]["word"] == "menu"
     assert notes["vocabulary"][0]["exampleTranslation"] == "我能看一下菜单吗？"
     assert notes["grammar"][0]["point"] == "would like"
@@ -127,6 +131,8 @@ def test_prompt_follows_the_courseware():
     assert "会一起导入" in PROMPT
     assert "不要为了凑数去编" in PROMPT
     assert "不要用代码块把全文包起来" in PROMPT
+    assert "示范回答" in PROMPT and "示范中文" in PROMPT
+    assert "每个块都要有这三节" in PROMPT
 
 
 def test_notes_keep_every_item():

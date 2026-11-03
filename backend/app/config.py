@@ -46,7 +46,7 @@ JOB_WORKERS = int(_env("JOB_WORKERS", "4") or 4)  # 同时处理出题/评分/�
 TRUST_PROXY = _env("TRUST_PROXY", "0") == "1"  # 部署在 Nginx 等反向代理后面时设为 1，用 X-Forwarded-For 识别 IP
 
 # ---- 磁盘 ----
-TTS_CACHE_MAX_MB = int(_env("TTS_CACHE_MAX_MB", "500") or 500)  # 朗读缓存上限，超出后清掉最久没用的
+TTS_CACHE_MAX_MB = int(_env("TTS_CACHE_MAX_MB", "800") or 800)  # 朗读缓存上限，超出后清掉最久没用的
 AUDIO_RETENTION_DAYS = int(_env("AUDIO_RETENTION_DAYS", "90") or 0)  # 练习录音保留天数，0 = 永久
 
 # ---- 大模型（不用网关时的备选：OpenAI 兼容接口：DeepSeek / 通义千问 / Kimi / OpenAI 等）----

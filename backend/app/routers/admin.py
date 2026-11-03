@@ -1,4 +1,5 @@
 """/api/admin: invites, users, AI usage and answer statistics (administrator only)."""
+import asyncio
 import re
 import shutil
 from typing import Optional
@@ -7,8 +8,10 @@ from fastapi import APIRouter, Depends, File, UploadFile
 
 from .. import ai, auth, config, db
 from ..deps import admin_user, bad
+from ..generate import complete_imported
 from ..import_pack import PROMPT, parse_documents, read_upload
 from ..llm import LLMError
+from ..tts import schedule_audio_warm
 from ..schemas import InviteReq, UserPatch
 
 
@@ -83,19 +86,15 @@ async def api_import(file: UploadFile = File(...), admin: dict = Depends(admin_u
     replaced = 0
     for item in ready:
         content = item["content"]
-        # Same language + topic + level + mode → replace earlier imports/practices.
-        old_ids = db.delete_sessions_by_topic(
-            admin["id"], content["language"], content["level"], content["mode"], content["topic"],
-        )
+        content, study_notes = await asyncio.to_thread(complete_imported, content, item["notes"])
+        sid, old_ids = db.replace_imported_session(content, admin["id"], study_notes)
         for oid in old_ids:
             _clear_session_audio(oid)
         replaced += len(old_ids)
-        sid = db.create_session(content, admin["id"])
-        if item["notes"]:
-            db.save_notes(sid, item["notes"])
+        schedule_audio_warm(content)
         imported.append({
             "id": sid, "topic": content["topic"], "mode": content["mode"],
-            "title": content["title"], "hasNotes": bool(item["notes"]),
+            "title": content["title"], "hasNotes": bool(study_notes),
             "replaced": len(old_ids),
         })
     return {"imported": imported, "replaced": replaced, "errors": errors}

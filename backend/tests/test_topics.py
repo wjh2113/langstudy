@@ -24,8 +24,24 @@ def test_list_topics_groups_by_key():
     topics = db.list_topics(uid)
     assert len(topics) == 2
     interview = next(t for t in topics if t["topic"] == "面试")
-    assert interview["id"] == latest and interview["attempts"] == 2
+    assert interview["id"] == latest and interview["attempts"] == 2 and interview["mine"] is True
     assert next(t for t in topics if t["topic"] == "点餐")["attempts"] == 1
+    with db._conn() as c:
+        c.execute("UPDATE sessions SET overall=88, report='{}' WHERE id=?", (latest,))
+    db.create_invite("join", uid, 1, None, "")
+    other = db.register_with_invite("learner", "password1", "join")["id"]
+    seen = db.list_topics(other)
+    shared = next(t for t in seen if t["topic"] == "面试")
+    assert shared["mine"] is False and shared["overall"] is None and shared["done"] is False
+    assert shared["ownerName"] == "topicer" and shared["attempts"] == 0
+    copy_id = db.begin_shared_topic(shared["id"], other)
+    assert copy_id != shared["id"]
+    copied = db.get_session(copy_id)
+    assert copied["userId"] == other and copied["turns"] == [] and copied["report"] is None
+    again = db.list_topics(other)
+    shared = next(t for t in again if t["topic"] == "面试")
+    assert shared["practiceId"] == copy_id and shared["attempts"] == 1 and shared["mine"] is False
+    assert db.session_ids_by_topic(other, "en", "intermediate", "questions", "面试") == []
 
 
 if __name__ == "__main__":
