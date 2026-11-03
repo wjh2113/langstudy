@@ -80,7 +80,7 @@ const SENTENCES = [
   "Please make sure the door is locked when you leave.",
 ]
 
-const shuffle = <T,>(arr: T[]): T[] => arr.map((v) => [Math.random(), v]).sort((a, b) => a[0] - b[0]).map((x) => x[1])
+const shuffle = <T,>(arr: T[]): T[] => arr.map((v): [number, T] => [Math.random(), v]).sort((a, b) => a[0] - b[0]).map((x) => x[1])
 
 /** Listen to a sentence in a random English accent and pick which one it is. */
 export default defineComponent({

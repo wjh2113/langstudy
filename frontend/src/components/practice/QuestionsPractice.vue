@@ -25,7 +25,7 @@
     <section v-if="question" class="card qa-current">
       <div class="qa-current__head">
         <span class="q-badge">Q{{ st.idx + 1 }}</span>
-        <TargetText :text="question.text" :env="env" cls="q-text" wrap-cls="qa-current__text" :revealed="!!revealed[mainId]"
+        <TargetText :text="question.text" :translation="question.translation || ''" :env="env" cls="q-text" wrap-cls="qa-current__text" :revealed="!!revealed[mainId]"
           @reveal="revealed[mainId] = true" />
         <PlayButton :id="mainId" :text="question.text" :env="env" label="再听一遍" @play="tracker.count(mainId)" />
       </div>
@@ -33,6 +33,13 @@
         <AppIcon name="bulb" :size="16" />
         <template v-if="showTip">答题思路：{{ question.tip }}</template>
         <button v-else type="button" class="link" @click="showTip = true">看看答题思路</button>
+      </p>
+      <p v-if="question.modelAnswer && st.stage === 'main'" class="tip">
+        <template v-if="showModel">
+          示范回答：<span :class="env.textClass">{{ question.modelAnswer }}</span>
+          <span v-if="question.modelAnswerTranslation" class="translation">{{ question.modelAnswerTranslation }}</span>
+        </template>
+        <button v-else type="button" class="link" @click="showModel = true">看看示范回答</button>
       </p>
 
       <div :class="['ai-box', { 'ai-box--active': st.stage !== 'main' }]">
@@ -46,11 +53,11 @@
           <button type="button" class="link" @click="next">不用追问，下一题</button></p>
         <div v-else-if="st.stage === 'follow' && followUp" class="ai-box__q">
           <PlayButton :id="followId" :text="followUp.text" :env="env" size="sm" @play="tracker.count(followId)" />
-          <TargetText :text="followUp.text" :env="env" cls="ai-box__text" :revealed="!!revealed[followId]" @reveal="revealed[followId] = true" />
+          <TargetText :text="followUp.text" :translation="followUp.translation || ''" :env="env" cls="ai-box__text" :revealed="!!revealed[followId]" @reveal="revealed[followId] = true" />
         </div>
       </div>
 
-      <AnswerBox v-if="st.stage !== 'thinking'" :key="promptId" :env="env" :hands-free="env.handsFree" :listen-signal="listen" @submit="save" />
+      <AnswerBox v-if="st.stage !== 'thinking'" :key="promptId" :env="env" await-server :hands-free="env.handsFree" :listen-signal="listen" @submit="save" />
       <div class="qa-current__foot">
         <button v-if="st.stage !== 'thinking'" type="button" class="link link--muted" @click="next">{{ st.stage === 'follow' ? '跳过追问' : '跳过这题' }}</button>
         <p v-if="followError" class="error">{{ followError }}</p>
@@ -74,7 +81,7 @@ import { play, prefetch, stop } from '../../lib/audio'
 import { SESSION_ID, useModeState, useRevealed } from '../../lib/practice'
 import { read, save as saveLocal } from '../../lib/storage'
 
-interface QState { idx: number; stage: 'main' | 'thinking' | 'follow'; followUps: Record<number, { text: string }> }
+interface QState { idx: number; stage: 'main' | 'thinking' | 'follow'; followUps: Record<number, { text: string; translation?: string }> }
 
 export default defineComponent({
   name: 'QuestionsPractice',
@@ -92,6 +99,7 @@ export default defineComponent({
     const st = useModeState<QState>('questions', { idx: 0, stage: 'main', followUps: {} })
     const questions = computed(() => props.content.questions || [])
     const showTip = ref(false)
+    const showModel = ref(false)
     const followOn = ref(read('ls.followup') !== '0')
     const followError = ref('')
     const listen = ref(0) // bumped when the question has been read out (hands-free)
@@ -118,6 +126,7 @@ export default defineComponent({
     function speakCurrent() {
       clearTimeout(timer)
       showTip.value = false
+      showModel.value = false
       if (!question.value || st.stage === 'thinking') return
       const id = promptId.value
       const text = st.stage === 'follow' ? followUp.value?.text : question.value.text
@@ -167,7 +176,7 @@ export default defineComponent({
       try {
         const r = await api.followup({ sessionId, question: questionText, answer, history: pairs })
         if (st.idx !== i || st.stage !== 'thinking') return // learner moved on
-        st.followUps = { ...st.followUps, [i]: { text: r.text } }
+        st.followUps = { ...st.followUps, [i]: { text: r.text, translation: r.translation || '' } }
         st.stage = 'follow'
       } catch (e: any) {
         if (st.idx !== i || st.stage !== 'thinking') return
@@ -182,8 +191,10 @@ export default defineComponent({
       const id = promptId.value
       const text = isFollow ? followUp.value?.text || '' : question.value?.text || ''
       const i = st.idx
+      const sample = isFollow ? '' : (question.value?.modelAnswer || '')
       emit('add-turn', {
         id, kind: 'answer', prompt: text, followUp: isFollow, ...a,
+        ...(sample ? { reference: sample, freeResponse: true } : {}),
         plays: props.tracker.plays[id] || 0, textHidden: props.env.hideText && !revealed[id],
       })
       followError.value = ''
@@ -191,7 +202,7 @@ export default defineComponent({
       else next()
     }
 
-    return { st, revealed, question, mainId, followId, followUp, promptId, history, listen, showTip, followOn, followError, openRow, setFollowOn, next, save }
+    return { st, revealed, question, mainId, followId, followUp, promptId, history, listen, showTip, showModel, followOn, followError, openRow, setFollowOn, next, save }
   },
 })
 </script>

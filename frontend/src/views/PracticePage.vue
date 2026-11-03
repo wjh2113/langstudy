@@ -21,9 +21,10 @@
           </button>
         </div>
         <div v-show="tab === 'practice'" class="practice__flow">
+          <KeyPoints :session-id="session.id" :env="env" :locked="!!content.notesLocked" :version="notesVersion" @generated="notesVersion++" />
           <component :is="modeComponent" :content="content" :env="env" :turns="turns" :tracker="tracker" :finishing="finishing" @add-turn="addTurn" @finish="finish" />
         </div>
-        <StudyNotes v-if="notesOpened" v-show="tab === 'notes'" :session-id="session.id" :env="env" :locked="!!content.notesLocked" />
+        <StudyNotes v-if="notesOpened" :key="notesVersion" v-show="tab === 'notes'" :session-id="session.id" :env="env" :locked="!!content.notesLocked" @generated="notesVersion++" />
       </main>
 
       <aside class="practice__aside card" aria-label="练习设置">
@@ -47,11 +48,14 @@ import ChatPractice from '../components/practice/ChatPractice.vue'
 import DialoguePractice from '../components/practice/DialoguePractice.vue'
 import DictationPractice from '../components/practice/DictationPractice.vue'
 import PracticeSettings from '../components/practice/PracticeSettings.vue'
+import KeyPoints from '../components/practice/KeyPoints.vue'
 import QuestionsPractice from '../components/practice/QuestionsPractice.vue'
 import StudyNotes from '../components/practice/StudyNotes.vue'
 import { api, type SessionOut } from '../api'
 import type { Content, PracticeState, Turn } from '../api/models'
 import { stop } from '../lib/audio'
+import { diffReference } from '../lib/diff'
+import { finalizeAnswers } from '../lib/finalizeAnswers'
 import { invalidate, refreshDue } from '../lib/cards'
 import { MODE_NAMES } from '../lib/format'
 import { PRACTICE_STATE, SESSION_ID, hydrateTurn, toApiTurn } from '../lib/practice'
@@ -65,19 +69,20 @@ const SAVE_DELAY = 800
 
 export default defineComponent({
   name: 'PracticePage',
-  components: { AppIcon, ModalDialog, PracticeSettings, StudyNotes },
+  components: { AppIcon, KeyPoints, ModalDialog, PracticeSettings, StudyNotes },
   setup() {
     const route = useRoute()
     const router = useRouter()
     const id = route.params.id as string
     const session = shallowRef<SessionOut | null>(null)
     const loadError = ref('')
-    const content = computed(() => (session.value?.content || {}) as Content)
-    const env = computed(() => (session.value ? envFor(content.value.language) : null))
+    const content = computed(() => (session.value?.content || {}) as unknown as Content)
+    const env = computed(() => envFor(content.value.language || 'en'))
     const turns = ref<Turn[]>([])
     const state = reactive<PracticeState>({})
     const tab = ref<'practice' | 'notes'>('practice')
     const notesOpened = ref(false)
+    const notesVersion = ref(0)
     const drawer = ref(false)
     const finishing = ref(false)
     const waited = ref(0)
@@ -99,10 +104,10 @@ export default defineComponent({
         const s = await api.session(id)
         if (s.report) return router.replace(`/report/${id}`)
         store.pageLanguage = (s.content as unknown as Content).language
-        turns.value = s.turns.map((t) => hydrateTurn(t as any, (s.content as any).language))
+        turns.value = (s.turns || []).map((t) => hydrateTurn(t as any, (s.content as any).language))
         Object.assign(state, s.state || {})
         session.value = s
-        if (s.turns.length) savedAt.value = '（上次）'
+        if (s.turns?.length) savedAt.value = '（上次）'
       } catch (e: any) {
         loadError.value = e.status === 404 ? '这个练习不存在，或者已经被删除了。' : e.message
       }
@@ -153,6 +158,8 @@ export default defineComponent({
 
     // ----------------------------------------------------------- turns
     const uploads = new Map<string, Promise<unknown>>()
+    // 浏览器稿先入库，服务端识别回来后改写成权威文本
+    const sttPending = new Map<string, Promise<string | null>>()
     const patchTurn = (key: string, patch: Partial<Turn>) => {
       turns.value = turns.value.map((t) => (t.id === key ? { ...t, ...patch } : t))
     }
@@ -171,9 +178,34 @@ export default defineComponent({
       uploads.set(turn.id, job)
     }
 
-    function addTurn(turn: Turn) {
-      turns.value = [...turns.value.filter((t) => t.id !== turn.id), turn]
-      if (turn.audioBlob) upload(turn)
+    function addTurn(turn: Turn & { serverText?: Promise<string | null> | null }) {
+      const pending = turn.serverText || null
+      const provisional = turn.answer || ''
+      const clean: Turn = { ...turn }
+      delete (clean as { serverText?: unknown }).serverText
+      turns.value = [...turns.value.filter((t) => t.id !== clean.id), clean]
+      if (clean.audioBlob) upload(clean)
+      if (!pending) {
+        sttPending.delete(clean.id)
+        return
+      }
+      const key = clean.id
+      sttPending.set(key, pending)
+      pending.then((text) => {
+        if (sttPending.get(key) !== pending) return
+        sttPending.delete(key)
+        if (!text || text === provisional) return
+        const cur = turns.value.find((t) => t.id === key)
+        // 这一条已经被重录替换过，就不要用旧的识别结果盖回去
+        if (!cur || cur.answer !== provisional) return
+        const patch: Partial<Turn> = { answer: text, confidence: null }
+        if (cur.reference && !cur.freeResponse && (cur.kind === 'shadow' || cur.kind === 'line')) {
+          patch.diff = diffReference(cur.reference, text, content.value.language || 'en')
+        }
+        patchTurn(key, patch)
+      }).catch(() => {
+        if (sttPending.get(key) === pending) sttPending.delete(key)
+      })
     }
 
     // pronunciation assessment is billed, so it only runs when the learner asks (评测发音)
@@ -222,15 +254,20 @@ export default defineComponent({
       finishing.value = true
       waited.value = 0
       try {
+        // 服务端识别本身有超时；评分必须采用校对完成后的同一份答案。
         // recordings still uploading get a moment to arrive (the report replays them)
-        await Promise.race([Promise.allSettled([...uploads.values()]), new Promise((r) => setTimeout(r, 15000))])
+        await Promise.race([
+          Promise.allSettled([...uploads.values()]),
+          new Promise((r) => setTimeout(r, 15000)),
+        ])
         if (saving) await saving.catch(() => {})
-        const report = await api.evaluate(id, payload(), (s) => (waited.value = s))
+        const gradedTurns = await finalizeAnswers(sttPending.values(), payload)
+        const report = await api.evaluate(id, gradedTurns, (s) => (waited.value = s))
         if (report.cardsAdded) {
           invalidate(content.value.language)
           refreshDue()
         }
-        cacheReport(id, { ...session.value, report: report as any, turns: payload() as any })
+        cacheReport(id, { ...session.value, report: report as any, turns: gradedTurns as any })
         dirty = false
         router.replace(`/report/${id}`)
       } catch (e: any) {
@@ -256,7 +293,7 @@ export default defineComponent({
     const openNotes = () => { tab.value = 'notes'; notesOpened.value = true }
 
     return {
-      session, loadError, content, env, turns, tracker, tab, notesOpened, drawer, settingsProps, openNotes, addTurn, finish,
+      session, loadError, content, env, turns, tracker, tab, notesOpened, notesVersion, drawer, settingsProps, openNotes, addTurn, finish, finishing,
       modeComponent: computed(() => MODE_COMPONENTS[content.value.mode]), MODE_NAMES,
     }
   },

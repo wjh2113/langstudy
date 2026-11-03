@@ -15,13 +15,13 @@
           <div class="sent__row">
             <PlayButton :id="s.id" :text="s.text" :env="env" size="lg" @play="tracker.count(s.id)" />
             <span class="sent__no">{{ s.n }}.</span>
-            <TargetText :text="s.text" :env="env" cls="sent__text" wrap-cls="sent__body" :revealed="!!revealed[s.id]"
+            <TargetText :text="s.text" :translation="s.translation || ''" :env="env" cls="sent__text" wrap-cls="sent__body" :revealed="!!revealed[s.id]"
               @reveal="revealed[s.id] = true" />
             <span v-if="shadowOf(s.id)" :class="['pill', band(shadowOf(s.id)?.diff?.similarity)]">{{ pct(shadowOf(s.id)?.diff?.similarity) }}%</span>
-            <button type="button" class="btn btn--sm btn--ghost sent__shadow" @click="toggle(s.id)">
+            <button type="button" class="btn btn--sm btn--ghost sent__shadow" @click="toggle(s.id, $event)">
               <AppIcon name="mic" :size="14" /> {{ shadowOf(s.id) ? '再跟读' : '跟读' }}
             </button>
-            <button type="button" class="icon-btn" :aria-label="openId === s.id ? '收起' : '展开'" @click="toggle(s.id)">
+            <button type="button" class="icon-btn" :aria-label="openId === s.id ? '收起' : '展开'" @click="toggle(s.id, $event)">
               <AppIcon :name="openId === s.id ? 'chevron-down' : 'chevron-right'" :size="18" />
             </button>
           </div>
@@ -30,7 +30,7 @@
               <DiffText v-if="shadowOf(s.id)?.diff" :tokens="shadowOf(s.id)?.diff?.tokens || []" :env="env" />
               <div class="shadow-result__meta">
                 <span :class="['pill', band(shadowOf(s.id)?.diff?.similarity)]">吻合 {{ pct(shadowOf(s.id)?.diff?.similarity) }}%</span>
-                <PronBadge :turn="shadowOf(s.id)" />
+                <PronBadge :turn="shadowOf(s.id)!" />
                 <span v-if="shadowOf(s.id)?.shadowSync && shadowOf(s.id)?.lagSec != null" class="pill pill--info">
                   影子跟读 · 晚 {{ shadowOf(s.id)?.lagSec }} 秒 · 用时 {{ shadowOf(s.id)?.durationRatio }} 倍
                 </span>
@@ -50,25 +50,38 @@
         <article v-for="(q, i) in questions" :key="i" :class="['quiz-card', { 'quiz-card--active': activeQ === i, done: !!turnOf(`q${i}`) }]">
           <div class="quiz-card__head">
             <span class="quiz-card__no">{{ i + 1 }}.</span>
-            <TargetText :text="q.text" :env="env" cls="quiz-card__q" :revealed="!!revealed[`q${i}`]" @reveal="revealed[`q${i}`] = true" />
+            <TargetText :text="q.text" :translation="q.translation || ''" :env="env" cls="quiz-card__q" :revealed="!!revealed[`q${i}`]" @reveal="revealed[`q${i}`] = true" />
             <PlayButton :id="`q${i}`" :text="q.text" :env="env" size="sm" @play="tracker.count(`q${i}`)" />
           </div>
+          <p v-if="q.modelAnswer" class="tip">
+            <template v-if="shownAnswer[i]">
+              示范回答：<span :class="env.textClass">{{ q.modelAnswer }}</span>
+              <span v-if="q.modelAnswerTranslation" class="translation">{{ q.modelAnswerTranslation }}</span>
+            </template>
+            <button v-else type="button" class="link" @click="shownAnswer[i] = true">看看示范回答</button>
+          </p>
           <template v-if="activeQ === i">
             <AnswerBox :env="env" @submit="(a) => saveAnswer(q, i, a)" />
             <button type="button" class="link link--muted" @click="activeQ = -1">收起</button>
           </template>
           <template v-else-if="turnOf(`q${i}`)">
-            <AnsweredCard :turn="turnOf(`q${i}`)" :env="env" redoable @redo="activeQ = i" />
+            <AnsweredCard :turn="turnOf(`q${i}`)!" :env="env" redoable @redo="activeQ = i" />
           </template>
           <button v-else type="button" class="btn btn--sm btn--ghost quiz-card__go" @click="activeQ = i"><AppIcon name="mic" :size="14" /> 作答</button>
         </article>
       </div>
     </section>
+    <div v-if="allAnswered" class="done-note done-note--actions">
+      <p><AppIcon name="check-circle" /> 理解题都答完了，查看你的练习报告。</p>
+      <button type="button" class="btn btn--primary btn--lg" :disabled="finishing" @click="$emit('finish')">
+        <AppIcon name="flag" :size="20" /> {{ finishing ? '正在评分…' : '结束并评分' }}
+      </button>
+    </div>
   </div>
 </template>
 
 <script lang="ts">
-import { computed, defineComponent, ref, type PropType } from 'vue'
+import { computed, defineComponent, nextTick, reactive, ref, type PropType } from 'vue'
 import AnswerBox, { type AnswerPayload } from './AnswerBox.vue'
 import AnsweredCard from './AnsweredCard.vue'
 import ShadowSync from './ShadowSync.vue'
@@ -84,6 +97,14 @@ import { diffReference } from '../../lib/diff'
 import { useRevealed } from '../../lib/practice'
 import { setDisplay } from '../../store'
 
+function scrollParent(el: HTMLElement): HTMLElement | Window {
+  for (let n = el.parentElement; n; n = n.parentElement) {
+    const oy = getComputedStyle(n).overflowY
+    if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight) return n
+  }
+  return window
+}
+
 export default defineComponent({
   name: 'ArticlePractice',
   components: { AnswerBox, AnsweredCard, AppIcon, DiffText, PlayButton, PronBadge, ShadowSync, TargetText, ToggleSwitch },
@@ -92,28 +113,36 @@ export default defineComponent({
     env: { type: Object as PropType<Env>, required: true },
     turns: { type: Array as PropType<Turn[]>, required: true },
     tracker: { type: Object as PropType<{ plays: Record<string, number>; count: (id: string) => void }>, required: true },
+    finishing: { type: Boolean, default: false },
   },
-  emits: ['add-turn'],
+  emits: ['add-turn', 'finish'],
   setup(props, { emit }) {
     const revealed = useRevealed()
     const openId = ref<string | null>(null)
     // Rejoin "Mr." / "Dr." fragments so an old pack that split on the title dot still plays as one line.
     const sentences = computed(() => {
       const raw = props.content.sentences || []
-      const merged: { text: string }[] = []
+      const merged: { text: string; translation?: string }[] = []
       const titleEnd = /(?:Mr|Mrs|Ms|Dr|Prof|St|Sr|Jr)\.\s*$/i
       for (const s of raw) {
         const text = (s.text || '').trim()
         if (!text) continue
         if (merged.length && titleEnd.test(merged[merged.length - 1].text)) {
-          merged[merged.length - 1] = { text: `${merged[merged.length - 1].text} ${text}`.trim() }
+          const prev = merged[merged.length - 1]
+          merged[merged.length - 1] = {
+            text: `${prev.text} ${text}`.trim(),
+            translation: [prev.translation, s.translation].filter(Boolean).join(' '),
+          }
         } else {
-          merged.push({ text })
+          merged.push({ text, translation: s.translation || '' })
         }
       }
       return merged.map((s, i) => ({ ...s, id: `s${i}`, n: i + 1 }))
     })
     const questions = computed(() => props.content.questions || [])
+    const shownAnswer = reactive<Record<number, boolean>>({})
+    // 理解题全部有回答后，在正文末尾给出评分按钮，和情景对话结束时一样。
+    const allAnswered = computed(() => questions.value.length > 0 && questions.value.every((_, i) => turnOf(`q${i}`)))
     const playingArticle = computed(() => Boolean(playingId.value?.startsWith('s')))
     const turnOf = (id: string) => props.turns.find((t) => t.id === id)
     const shadowOf = (id: string) => turnOf(`shadow-${id}`)
@@ -122,7 +151,17 @@ export default defineComponent({
     const band = (sim?: number) => (sim == null ? '' : sim >= 0.9 ? 'good' : sim >= 0.7 ? 'mid' : 'low')
     const pct = (sim?: number) => Math.round((sim || 0) * 100)
     const allPlays = () => Math.max(0, ...sentences.value.map((s) => props.tracker.plays[s.id] || 0))
-    const toggle = (id: string) => (openId.value = openId.value === id ? null : id)
+    // 打开一句会收起上面那句的面板；不补偿的话整页往上跳，按钮从鼠标下溜走，光标变成文字光标。
+    // 记下被点那一行的位置，DOM 更新后把差值滚回去，让它停在原处。
+    async function toggle(id: string, ev?: Event) {
+      const row = (ev?.currentTarget as HTMLElement | null)?.closest('.sent') as HTMLElement | null
+      const before = row?.getBoundingClientRect().top
+      openId.value = openId.value === id ? null : id
+      if (!row || before == null) return
+      await nextTick()
+      const delta = row.getBoundingClientRect().top - before
+      if (Math.abs(delta) > 1) scrollParent(row).scrollBy(0, delta)
+    }
 
     function playAll() {
       if (playingArticle.value) return stop()
@@ -140,13 +179,13 @@ export default defineComponent({
     function saveAnswer(q: Question, i: number, a: AnswerPayload) {
       const id = `q${i}`
       emit('add-turn', {
-        id, kind: 'answer', prompt: q.text, reference: q.answerHint, freeResponse: true, ...a,
+        id, kind: 'answer', prompt: q.text, reference: q.modelAnswer || q.answerHint, freeResponse: true, ...a,
         plays: (props.tracker.plays[id] || 0) + allPlays(), textHidden: props.env.hideText && !revealed[id],
       })
       activeQ.value = questions.value.findIndex((_, k) => k !== i && !turnOf(`q${k}`))
     }
 
-    return { revealed, openId, sentences, questions, playingId, playingArticle, turnOf, shadowOf, activeQ, band, pct, toggle, playAll, saveShadow, saveAnswer, setDisplay }
+    return { revealed, openId, sentences, questions, shownAnswer, allAnswered, playingId, playingArticle, turnOf, shadowOf, activeQ, band, pct, toggle, playAll, saveShadow, saveAnswer, setDisplay }
   },
 })
 </script>

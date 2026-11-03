@@ -11,7 +11,7 @@
 import { computed, defineComponent, ref, type PropType } from 'vue'
 import AppIcon from '../ui/AppIcon.vue'
 import type { Env } from '../../api/models'
-import { useRecorder } from '../../lib/recorder'
+import { takeServerJob, useRecorder } from '../../lib/recorder'
 import { play, stop } from '../../lib/audio'
 import { diffReference } from '../../lib/diff'
 
@@ -63,7 +63,7 @@ export default defineComponent({
       emit('result', {
         id: `shadow-${props.id}`, kind: 'shadow', shadowSync: true, reference: props.text,
         answer: result.text, input: 'voice', durationSec: result.durationSec, confidence: result.confidence,
-        audioUrl: result.audioUrl, audioBlob: result.audioBlob,
+        audioUrl: result.audioUrl, audioBlob: result.audioBlob, serverText: takeServerJob(result.startedAt),
         lagSec, durationRatio: refDur ? Math.round((result.durationSec / refDur) * 100) / 100 : null,
         diff: diffReference(props.text, result.text, props.env.language),
       })

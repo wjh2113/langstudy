@@ -49,7 +49,7 @@ export default defineComponent({
       return { ...s, pts, path: pts.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ') }
     }))
     const ticks = computed(() => {
-      const out = []
+      const out: { x: number; label: string }[] = []
       for (let d = props.days; d >= 0; d -= Math.ceil(props.days / 8)) {
         const t = end.getTime() - d * DAY
         const dt = new Date(t)

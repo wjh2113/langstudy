@@ -7,7 +7,7 @@ export type Mode = 'questions' | 'dialogue' | 'article' | 'chat' | 'dictation'
 export type Level = 'beginner' | 'intermediate' | 'advanced'
 
 export interface Sentence { text: string; translation?: string; blanks?: string[] }
-export interface Question { text: string; translation?: string; tip?: string; answerHint?: string }
+export interface Question { text: string; translation?: string; tip?: string; answerHint?: string; modelAnswer?: string; modelAnswerTranslation?: string }
 export interface Role { id: string; name: string; description?: string }
 export interface Line { role: string; text: string; translation?: string }
 
@@ -29,6 +29,7 @@ export interface Content {
   aiRole?: Role
   userRole?: Role
   opening?: string
+  openingTranslation?: string
 }
 
 export interface DiffToken { t: string; ok: boolean }
@@ -146,7 +147,7 @@ export interface Card {
 }
 
 export interface Coach {
-  level?: string; change?: boolean; reason?: string
+  level?: Level; change?: boolean; reason?: string
   weakest?: { key: string; name: string; score: number }
 }
 

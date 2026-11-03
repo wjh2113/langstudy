@@ -39,7 +39,7 @@
         <div v-if="!pickOpen && selected" class="resume__face">
           <button type="button" class="resume__item resume__item--go" :disabled="opening" @click="openPick(selected)">
             <span :class="['tag', `tag--${selected.language}`]">{{ LANG_NAMES[selected.language || 'en'] }}</span>
-            <span class="tag tag--mode">{{ MODE_NAMES[selected.mode] }}</span>
+            <span class="tag tag--mode">{{ MODE_NAMES[selected.mode || ""] }}</span>
             <strong>{{ selected.topic }}</strong>
             <span class="muted">{{ pickMeta(selected) }}</span>
             <AppIcon name="chevron-right" :size="16" />
@@ -82,7 +82,7 @@
                 @mouseenter="pickActive = i"
               >
                 <span :class="['tag', `tag--${s.language}`]">{{ LANG_NAMES[s.language || 'en'] }}</span>
-                <span class="tag tag--mode">{{ MODE_NAMES[s.mode] }}</span>
+                <span class="tag tag--mode">{{ MODE_NAMES[s.mode || ""] }}</span>
                 <strong>{{ s.topic }}</strong>
                 <span class="muted">{{ pickMeta(s) }}</span>
               </button>
@@ -98,7 +98,7 @@
         <AppIcon name="bars" class="coach__icon" />
         <p><strong>难度建议</strong>{{ coach.reason }}</p>
         <button v-if="coach.change && prefs.level !== coach.level" type="button" class="btn btn--sm btn--ghost"
-          @click="setPrefs({ level: coach.level })">改为{{ LEVEL_NAMES[coach.level] }}</button>
+          @click="setPrefs({ level: coach.level })">改为{{ LEVEL_NAMES[coach.level || ""] }}</button>
         <span v-else-if="coach.change && autoApplied" class="tag tag--ok">已自动调整</span>
       </div>
       <div v-if="coach.weakest" class="coach__row">
@@ -134,7 +134,7 @@
           <OptHead icon="list" title="题目数量" :sub="countHint" />
           <SegControl v-if="hasCount" block :options="[3, 5, 8].map((n) => ({ value: n, label: String(n) }))"
             :model-value="prefs.count" label="题目数量" @update:model-value="(v) => setPrefs({ count: v })" />
-          <p v-else class="muted opt__note">{{ prefs.mode === 'chat' ? '自由对话不限轮数，聊到自然结束为止。' : '长度按难度自动决定。' }}</p>
+          <p v-else class="muted opt__note">{{ lengthNote }}</p>
         </div>
       </div>
 
@@ -257,8 +257,13 @@ export default defineComponent({
     const pickRegion = (r: { name: string; items: Accent[] }) => {
       if (r.name !== currentRegion.value) setAccent(prefs.language, r.items[0].key)
     }
-    const hasCount = computed(() => prefs.mode === 'questions' || prefs.mode === 'article')
-    const countHint = computed(() => (prefs.mode === 'article' ? '短文后的理解题数量' : hasCount.value ? '每次练习包含的题目数量' : '这个形式不需要设置'))
+    const hasCount = computed(() => prefs.mode === 'article')
+    const countHint = computed(() => (prefs.mode === 'article' ? '短文后的理解题数量' : '长度按难度自动决定'))
+    const lengthNote = computed(() => (
+      prefs.mode === 'chat'
+        ? '入门大约 15 轮，中级大约 20 轮，高级大约 30 轮，可以少几轮或多几轮。'
+        : '入门大约 15，中级大约 20，高级大约 30，可以少两三句或多两三句。'
+    ))
 
     // coaching: suggested difficulty + weakest skill for the selected language
     const coach = ref<Coach | null>(null)
@@ -369,6 +374,17 @@ export default defineComponent({
       error.value = ''
       closePickMenu()
       try {
+        const shared = (s as { mine?: boolean; practiceId?: string | null }).mine === false
+        if (shared) {
+          const practiceId = (s as { practiceId?: string | null }).practiceId
+          if (!s.done && practiceId) {
+            router.push(`/practice/${practiceId}`)
+            return
+          }
+          const r = s.done && practiceId ? await api.repeat(practiceId) : await api.beginTopic(s.id)
+          router.push(`/practice/${r.id}`)
+          return
+        }
         if (!s.done) {
           router.push(`/practice/${s.id}`)
           return
@@ -497,7 +513,7 @@ export default defineComponent({
       store, prefs, topic, busy, waited, error, reuse, uploadOpen, pasting, topicImportBusy,
       openUpload, onUploadBusy, onImported,
       languages, levelOptions, regions, accentKey, currentAccent, currentRegion,
-      regionAccents, pickRegion, hasCount, countHint, coach, autoApplied,
+      regionAccents, pickRegion, hasCount, countHint, lengthNote, coach, autoApplied,
       picks, selectedId, selected, opening, pickOpen, pickQuery, pickActive, filteredPicks,
       comboEl, pickInput, pickMeta, openPick, openPickMenu, closePickMenu, choosePick, onPickKey,
       submit, startNew, useLast, drill,

@@ -49,7 +49,7 @@
               <td class="nowrap">{{ dateTime(s.createdAt) }}</td>
               <td v-if="showAll">{{ s.username || '—' }}</td>
               <td><span :class="['tag', `tag--${s.language}`]">{{ LANG_NAMES[s.language || 'en'] }}</span></td>
-              <td><span :class="['tag', 'tag--mode', `tag--mode-${s.mode}`]">{{ MODE_NAMES[s.mode] }}</span></td>
+              <td><span :class="['tag', 'tag--mode', `tag--mode-${s.mode}`]">{{ MODE_NAMES[s.mode || ""] }}</span></td>
               <td class="history-table__topic">{{ s.topic }}<span class="muted">{{ s.title }}</span></td>
               <td>
                 <strong v-if="s.done" :class="['score-text', scoreBand(s.overall)]">{{ s.overall ?? '—' }}</strong>
@@ -77,7 +77,7 @@
         <div class="history-card__top">
           <div class="history-card__tags">
             <span :class="['tag', `tag--${s.language}`]">{{ s.language === 'ja' ? '日语' : '英语' }}</span>
-            <span :class="['tag', 'tag--mode', `tag--mode-${s.mode}`]">{{ MODE_NAMES[s.mode] }}</span>
+            <span :class="['tag', 'tag--mode', `tag--mode-${s.mode}`]">{{ MODE_NAMES[s.mode || ""] }}</span>
             <span v-if="showAll && s.username" class="tag tag--sm">{{ s.username }}</span>
           </div>
           <span class="muted history-card__when">{{ dateTime(s.createdAt) }}</span>

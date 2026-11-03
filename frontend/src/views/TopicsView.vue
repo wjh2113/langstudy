@@ -112,10 +112,13 @@
                 class="topics-table__child"
               >
                 <td class="topics-table__fold" />
-                <td class="topics-table__child-topic muted">{{ displayTitle(t, g.topic) }}</td>
+                <td class="topics-table__child-topic muted">
+                  {{ displayTitle(t, g.topic) }}
+                  <span v-if="!t.mine && t.ownerName">{{ t.ownerName }}</span>
+                </td>
                 <td><span :class="['tag', `tag--${t.language}`]">{{ LANG_NAMES[t.language || 'en'] }}</span></td>
                 <td>{{ LEVEL_NAMES[t.level || ''] || t.level || '—' }}</td>
-                <td><span class="tag tag--mode">{{ MODE_NAMES[t.mode] || t.mode }}</span></td>
+                <td><span class="tag tag--mode">{{ MODE_NAMES[t.mode || ""] || t.mode }}</span></td>
                 <td>
                   <span v-if="!t.done && (t.answered || 0) > 0" class="tag tag--warn tag--sm">未完成 · 已答 {{ t.answered }}</span>
                   <span v-else-if="!t.done" class="tag tag--sm">未开始</span>
@@ -144,6 +147,7 @@
                     @click="reuse(t)"
                   ><AppIcon name="repeat" :size="16" /></button>
                   <button
+                    v-if="t.mine"
                     type="button"
                     class="icon-btn"
                     :disabled="!!busy"
@@ -152,6 +156,7 @@
                     @click="regen(t)"
                   ><AppIcon name="refresh" :size="16" /></button>
                   <button
+                    v-if="t.mine"
                     type="button"
                     class="icon-btn icon-btn--danger"
                     :disabled="!!busy"
@@ -184,13 +189,16 @@
             <div class="topics-acc__tags">
               <span :class="['tag', `tag--${t.language}`]">{{ t.language === 'ja' ? '日语' : '英语' }}</span>
               <span class="tag tag--sm">{{ LEVEL_NAMES[t.level || ''] || t.level || '—' }}</span>
-              <span class="tag tag--mode">{{ MODE_NAMES[t.mode] || t.mode }}</span>
+              <span class="tag tag--mode">{{ MODE_NAMES[t.mode || ""] || t.mode }}</span>
               <span v-if="!t.done && (t.answered || 0) > 0" class="tag tag--warn tag--sm">未完成 · 已答 {{ t.answered }}</span>
               <span v-else-if="!t.done" class="tag tag--sm">未开始</span>
               <span v-else-if="t.overall != null" :class="['score-text', scoreBand(t.overall)]">{{ t.overall }} 分</span>
               <span v-else class="tag tag--sm">已完成</span>
             </div>
-            <p v-if="displayTitle(t, g.topic)" class="topics-acc__subtitle muted">{{ displayTitle(t, g.topic) }}</p>
+            <p v-if="displayTitle(t, g.topic) || (!t.mine && t.ownerName)" class="topics-acc__subtitle muted">
+              {{ displayTitle(t, g.topic) }}
+              <span v-if="!t.mine && t.ownerName">{{ t.ownerName }}</span>
+            </p>
             <div class="topics-acc__foot">
               <span class="muted">{{ dateTime(t.updatedAt || t.createdAt) }} · {{ t.attempts }} 次</span>
               <div class="topics-table__actions">
@@ -213,6 +221,7 @@
                   @click="reuse(t)"
                 ><AppIcon name="repeat" :size="16" /></button>
                 <button
+                  v-if="t.mine"
                   type="button"
                   class="icon-btn"
                   :disabled="!!busy"
@@ -221,6 +230,7 @@
                   @click="regen(t)"
                 ><AppIcon name="refresh" :size="16" /></button>
                 <button
+                  v-if="t.mine"
                   type="button"
                   class="icon-btn icon-btn--danger"
                   :disabled="!!busy"
@@ -278,6 +288,24 @@
       @imported="onImported"
       @busy="onUploadBusy"
     />
+
+    <ModalDialog :open="!!deleteTarget" title="删除话题" icon="trash" @close="deleteTarget = null">
+      <p v-if="deleteTarget">删除「{{ deleteTarget.topic }}」会去掉你在这个语言、级别、形式下的全部 {{ deleteTarget.attempts || 1 }} 次练习记录，不能恢复。</p>
+      <p class="muted">确定后才会删除。取消则保留。</p>
+      <div class="modal__actions">
+        <button type="button" class="btn btn--ghost" :disabled="!!busy" @click="deleteTarget = null">取消</button>
+        <button type="button" class="btn btn--primary" :disabled="!!busy" @click="confirmRemove">删除</button>
+      </div>
+    </ModalDialog>
+
+    <ModalDialog :open="!!regenTarget" title="重新生成" icon="refresh" @close="regenTarget = null">
+      <p v-if="regenTarget">重新生成「{{ regenTarget.topic }}」会再调用一次大模型，写出一套新的练习。中文、重点单词、语法、句型和示范回答都会重新生成。</p>
+      <p class="muted">原来的练习记录会留下。确定后才会开始，取消则不会调用模型。</p>
+      <div class="modal__actions">
+        <button type="button" class="btn btn--ghost" :disabled="!!busy" @click="regenTarget = null">取消</button>
+        <button type="button" class="btn btn--primary" :disabled="!!busy" @click="confirmRegen">重新生成</button>
+      </div>
+    </ModalDialog>
   </div>
 </template>
 
@@ -300,7 +328,7 @@ const MODES: { key: Mode; name: string }[] = [
   { key: 'dictation', name: '精听填空' },
 ]
 
-const LEVELS = [
+const LEVELS: { key: Level; label: string }[] = [
   { key: 'beginner', label: '入门' },
   { key: 'intermediate', label: '中级' },
   { key: 'advanced', label: '高级' },
@@ -357,9 +385,9 @@ export default defineComponent({
     const items = ref<TopicItem[] | null>(null)
     const error = ref('')
     const q = ref('')
-    const lang = ref('')
-    const level = ref('')
-    const mode = ref('')
+    const lang = ref<'' | Lang>('en')
+    const level = ref<'' | Level>('intermediate')
+    const mode = ref<'' | Mode>('article')
     const status = ref<StatusFilter>('')
     const filtersOpen = ref(false)
     const busy = ref('')
@@ -378,7 +406,7 @@ export default defineComponent({
     const load = () => api.topics().then((r) => (items.value = r)).catch((e) => (error.value = e.message))
     onMounted(load)
 
-    const hasActiveFilters = computed(() => !!(lang.value || level.value || mode.value || status.value || q.value.trim()))
+    const hasActiveFilters = computed(() => !!(lang.value !== 'en' || level.value !== 'intermediate' || mode.value !== 'article' || status.value || q.value.trim()))
 
     const filterSummary = computed(() => {
       const parts: string[] = []
@@ -434,9 +462,9 @@ export default defineComponent({
 
     function clearFilters() {
       q.value = ''
-      lang.value = ''
-      level.value = ''
-      mode.value = ''
+      lang.value = 'en'
+      level.value = 'intermediate'
+      mode.value = 'article'
       status.value = ''
     }
 
@@ -484,10 +512,35 @@ export default defineComponent({
       await load()
     }
 
+    async function openShared(t: TopicItem) {
+      if (!t.done && t.practiceId) {
+        router.push(`/practice/${t.practiceId}`)
+        return
+      }
+      error.value = ''
+      busy.value = t.id
+      busyLabel.value = `正在打开「${t.topic}」…`
+      try {
+        const r = t.done && t.practiceId ? await api.repeat(t.practiceId) : await api.beginTopic(t.id)
+        router.push(`/practice/${r.id}`)
+      } catch (e: any) {
+        error.value = e.message
+      } finally {
+        busy.value = ''
+      }
+    }
     function open(t: TopicItem) {
+      if (!t.mine) {
+        openShared(t)
+        return
+      }
       router.push(`/practice/${t.id}`)
     }
     async function reuse(t: TopicItem) {
+      if (!t.mine) {
+        openShared(t)
+        return
+      }
       error.value = ''
       busy.value = t.id
       busyLabel.value = `正在打开「${t.topic}」…`
@@ -500,9 +553,15 @@ export default defineComponent({
         busy.value = ''
       }
     }
-    async function regen(t: TopicItem) {
-      if (!t.topic || !t.language || !t.level || !t.mode) return
-      if (!window.confirm(`重新生成「${t.topic}」？会再调用一次模型，得到一套新题。`)) return
+    const regenTarget = ref<TopicItem | null>(null)
+    function regen(t: TopicItem) {
+      if (!t.mine || !t.topic || !t.language || !t.level || !t.mode || busy.value) return
+      regenTarget.value = t
+    }
+    async function confirmRegen() {
+      const t = regenTarget.value
+      if (!t || !t.topic || !t.language || !t.level || !t.mode) return
+      regenTarget.value = null
       error.value = ''
       busy.value = t.id
       busyLabel.value = `正在重新生成「${t.topic}」…`
@@ -523,10 +582,15 @@ export default defineComponent({
         busy.value = ''
       }
     }
-    async function remove(t: TopicItem) {
-      if (!t.topic || !t.language || !t.level || !t.mode) return
-      const n = t.attempts || 1
-      if (!window.confirm(`删除「${t.topic}」？会去掉该语言、级别、形式下的全部 ${n} 次练习记录，不能恢复。`)) return
+    const deleteTarget = ref<TopicItem | null>(null)
+    function remove(t: TopicItem) {
+      if (!t.mine || !t.topic || !t.language || !t.level || !t.mode || busy.value) return
+      deleteTarget.value = t
+    }
+    async function confirmRemove() {
+      const t = deleteTarget.value
+      if (!t || !t.mine || !t.topic || !t.language || !t.level || !t.mode) return
+      deleteTarget.value = null
       error.value = ''
       busy.value = t.id
       busyLabel.value = `正在删除「${t.topic}」…`
@@ -571,8 +635,8 @@ export default defineComponent({
       items, error, q, lang, level, mode, status, levels: LEVELS, modes: MODES,
       filtersOpen, filterSummary, flatShown, groups, expanded, hasActiveFilters,
       clearFilters, isOpen, toggleGroup, displayTitle,
-      busy, busyLabel, waited, creating, uploadOpen, draft,
-      open, openCreate, openUpload, onUploadBusy, onImported, reuse, regen, remove, create,
+      busy, busyLabel, waited, creating, uploadOpen, draft, regenTarget, deleteTarget,
+      open, openCreate, openUpload, onUploadBusy, onImported, reuse, regen, confirmRegen, remove, confirmRemove, create,
       LANG_NAMES, LEVEL_NAMES, MODE_NAMES, dateTime, scoreBand,
     }
   },

@@ -5,9 +5,9 @@
       <span class="veil__label"><AppIcon name="eye" :size="16" /> 点击显示</span>
     </button>
     <template v-else>
-      <p :class="[env.textClass, cls]">{{ text }}<button v-if="translatable && !showTr" type="button" class="tr-btn"
-        title="翻译这一句" aria-label="翻译这一句" @click="asked = true"><AppIcon name="translate" :size="14" /></button></p>
-      <TranslationLine v-if="showTr" :text="text" :language="env.language" />
+      <SaveableText :class="[env.textClass, cls]" :language="env.language" :sentence="text">{{ text }}<button v-if="translatable && !showTr" type="button" class="tr-btn"
+        title="翻译这一句" aria-label="翻译这一句" @click="asked = true"><AppIcon name="translate" :size="14" /></button></SaveableText>
+      <TranslationLine v-if="showTr" :text="text" :language="env.language" :given="translation" />
     </template>
   </div>
 </template>
@@ -15,19 +15,20 @@
 <script lang="ts">
 import { computed, defineComponent, ref, type PropType } from 'vue'
 import AppIcon from './AppIcon.vue'
+import SaveableText from './SaveableText.vue'
 import TranslationLine from './TranslationLine.vue'
 import type { Env } from '../../api/models'
 
 /**
  * Target-language text that can be blurred for blind listening.
- * Its Chinese translation is fetched only on demand: with 显示翻译 on, when the
- * blurred text is revealed, or when the learner taps 译 for this one sentence.
+ * 生成时带上的中文直接显示。没有译文的旧内容，才在打开翻译时再去请求。
  */
 export default defineComponent({
   name: 'TargetText',
-  components: { AppIcon, TranslationLine },
+  components: { AppIcon, SaveableText, TranslationLine },
   props: {
     text: { type: String, required: true },
+    translation: { type: String, default: '' },
     env: { type: Object as PropType<Env>, required: true },
     cls: { type: String, default: '' },
     wrapCls: { type: String, default: '' },

@@ -24,6 +24,22 @@ const MAX_MS = 90000
 const RECORDER_STOP_MS = 1500 // MediaRecorder.onstop can hang on some mobile browsers; real flush is usually <500ms
 const STT_TIMEOUT_MS = 45000 // don't leave the UI on「正在识别…」forever
 
+// 浏览器已经听出文本时，服务端识别改到后台。Promise 不放进响应式对象，避免被 Vue 代理后无法 then。
+const serverJobs = new Map<number, Promise<string | null>>()
+
+/** 这次录音若已转入后台识别，返回该 Promise（失败或空结果 resolve 为 null）。需在 stop() 返回后立刻取用。 */
+export function takeServerJob(startedAt: number): Promise<string | null> | null {
+  return serverJobs.get(startedAt) || null
+}
+
+function trackServerJob(startedAt: number, job: Promise<string | null>): Promise<string | null> {
+  const wrapped = job.finally(() => {
+    if (serverJobs.get(startedAt) === wrapped) serverJobs.delete(startedAt)
+  })
+  serverJobs.set(startedAt, wrapped)
+  return wrapped
+}
+
 export interface RecordingResult {
   text: string
   confidence: number | null
@@ -153,6 +169,7 @@ export function useRecorder(
       rec.continuous = true
       rec.interimResults = true
       rec.onresult = (e: any) => {
+        if (session.stopping) return // 停止后保留已经拼好的稿，避免末尾 interim 把全文冲掉
         let text = ''
         for (let i = e.resultIndex; i < e.results.length; i++) {
           const res = e.results[i]
@@ -192,6 +209,48 @@ export function useRecorder(
     return new Blob(session.chunks, { type })
   }
 
+  /** 已定稿加上还没定稿的尾巴。点停止时，最后几个词经常还停在 interim 里。 */
+  function joinHeard(session: any, live: string): string {
+    const joiner = session.language === 'ja' ? '' : ' '
+    const finals = (session.finals || []).join(joiner).trim()
+    const tail = (live || '').trim()
+    if (!finals) return tail
+    if (!tail) return finals
+    return `${finals}${joiner}${tail}`.trim()
+  }
+
+  /**
+   * 上传录音并等网关识别。
+   * fallback 非空：界面上已经有浏览器稿，失败时不要再盖一条错误，调用方继续用浏览器稿。
+   * 返回 null 表示没有可用的服务端文本。
+   */
+  async function transcribeOnServer(session: any, blob: Blob | null, fallback: string, flushMs: number): Promise<string | null> {
+    if (!blob || blob.size < 64) {
+      if (!fallback) error.value = '没有录到声音，请靠近麦克风再说一次'
+      return null
+    }
+    const t0 = performance.now()
+    try {
+      const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), STT_TIMEOUT_MS) : 0
+      try {
+        const text = ((await api.stt(blob, session.language, ctrl?.signal)).text || '').trim()
+        console.info(`[stt] ${blob.type} ${Math.round(blob.size / 1024)}KB · 停止录音 ${flushMs}ms · 上传+识别 ${Math.round(performance.now() - t0)}ms${fallback ? ' · 后台' : ''}`)
+        return text || null
+      } finally {
+        if (timer) clearTimeout(timer)
+      }
+    } catch (e: any) {
+      if (fallback) {
+        console.warn('[stt] 服务端识别失败，沿用浏览器结果', e?.message || e)
+        return null
+      }
+      if (e?.name === 'AbortError') error.value = '识别超时了，请再试一次或改用文字输入'
+      else error.value = e.message || '语音识别失败，请再试一次'
+      return null
+    }
+  }
+
   /** Wait for MediaRecorder to flush; never hang the「正在识别…」UI. */
   function stopRecorder(session: any): Promise<Blob | null> {
     return new Promise((resolve) => {
@@ -224,56 +283,61 @@ export function useRecorder(
     const endedAt = performance.now()
     session.wantRecognition = false
 
+    // 服务端识别开启时，浏览器稿只用来先显示。先抄下来再 abort，否则最后几个词还在 interim 里会被丢掉。
+    // 没开服务端识别时不能打 stopping：还要等浏览器把最后一句标成 final。
+    let liveText = ''
+    if (session.serverSTT) {
+      liveText = joinHeard(session, interim.value)
+      session.stopping = true
+      if (liveText) interim.value = liveText
+      try { session.recognition?.abort() } catch { /* ignore */ }
+    }
+
     try {
       const recognised = new Promise<void>((resolve) => {
-        if (!session.recognition) return resolve()
-        if (session.serverSTT) { // live text only: don't wait for it
-          try { session.recognition.abort() } catch { /* ignore */ }
-          return resolve()
-        }
+        if (!session.recognition || session.serverSTT) return resolve()
         session.recEnded = () => resolve()
         try { session.recognition.stop() } catch { resolve() }
         setTimeout(() => resolve(), 2500) // don't hang if onend never fires
       })
       const t0 = performance.now()
       const [blob] = await Promise.all([stopRecorder(session), recognised])
-      const tFlushed = performance.now()
+      const flushMs = Math.round(performance.now() - t0)
       cleanup()
       level.value = 0
-      interim.value = ''
 
       const voiced = session.firstVoice && session.lastVoice ? (session.lastVoice - session.firstVoice) / 1000 + 0.4 : 0
       const total = (endedAt - session.startedAt) / 1000
       const durationSec = Math.round(Math.min(total, voiced || total) * 10) / 10
 
-      let text = session.finals.join(session.language === 'ja' ? '' : ' ').trim()
+      // 纯浏览器识别仍只采用已定稿句子，避免把没说完的 interim 写进答案。
+      let text = session.serverSTT ? liveText : session.finals.join(session.language === 'ja' ? '' : ' ').trim()
       let confidence: number | null = session.confidences.length
         ? session.confidences.reduce((a: number, b: number) => a + b, 0) / session.confidences.length
         : null
-      if (session.serverSTT) {
-        if (!blob || blob.size < 64) {
-          if (!text) error.value = '没有录到声音，请靠近麦克风再说一次'
-        } else {
-          try {
-            const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null
-            const timer = ctrl ? setTimeout(() => ctrl.abort(), STT_TIMEOUT_MS) : 0
-            try {
-              text = (await api.stt(blob, session.language, ctrl?.signal)).text
-              confidence = null
-              console.info(`[stt] ${blob.type} ${Math.round(blob.size / 1024)}KB · 停止录音 ${Math.round(tFlushed - t0)}ms · 上传+识别 ${Math.round(performance.now() - tFlushed)}ms`)
-            } finally {
-              if (timer) clearTimeout(timer)
-            }
-          } catch (e: any) {
-            if (e?.name === 'AbortError') error.value = '识别超时了，请再试一次或改用文字输入'
-            else error.value = e.message || '语音识别失败，请再试一次'
-          }
-        }
-      }
-      return {
+
+      const result: RecordingResult = {
         text, confidence, durationSec, audioBlob: blob, audioUrl: blob ? URL.createObjectURL(blob) : null,
         startedAt: session.startedAt, voiceStartAt: session.firstVoice || null, // for shadowing lag
       }
+
+      if (session.serverSTT && text) {
+        // 浏览器已经听出内容：录音一停就把字交给界面，网关回来后再换成权威结果。
+        // 不在 onstop 之前上传：最后一块音频还没落盘，提前传会把句尾切掉。国内 Chrome 通常没有浏览器稿，仍在下面等网关。
+        interim.value = ''
+        trackServerJob(session.startedAt, transcribeOnServer(session, blob, text, flushMs))
+        return result
+      }
+
+      interim.value = ''
+      if (session.serverSTT) {
+        const server = await transcribeOnServer(session, blob, '', flushMs)
+        if (server) {
+          result.text = server
+          result.confidence = null
+        }
+      }
+      return result
     } catch (e: any) {
       cleanup()
       level.value = 0

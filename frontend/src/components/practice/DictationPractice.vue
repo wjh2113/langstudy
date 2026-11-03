@@ -13,18 +13,18 @@
           <PlayButton :id="s.id" :text="s.text" :env="env" size="lg" @play="tracker.count(s.id)" />
           <span class="sent__no">{{ s.n }}.</span>
           <div class="sent__body">
-            <p :class="['cloze', env.textClass]">
+            <SaveableText :class="['cloze', env.textClass]" :language="env.language" :sentence="s.text">
               <template v-for="(part, k) in s.parts" :key="k">
                 <span v-if="part.text != null">{{ part.text }}</span>
-                <span v-else class="cloze__slot">
+                <span v-else-if="part.key != null && part.answer != null" class="cloze__slot">
                   <input v-model="st.answers[part.key]" :class="['cloze__input', resultClass(part.key)]" :disabled="st.checked[s.id]"
                     :style="{ width: Math.max(4, part.answer.length + 2) + 'ch' }" :aria-label="`第 ${part.n} 个空`"
                     autocomplete="off" autocapitalize="off" spellcheck="false" @keydown.enter="check(s)" />
                   <span v-if="st.checked[s.id] && !isRight(part)" class="cloze__answer">{{ part.answer }}</span>
                 </span>
               </template>
-            </p>
-            <TranslationLine v-if="env.showTranslation && st.checked[s.id]" :text="s.text" :language="env.language" />
+            </SaveableText>
+            <TranslationLine v-if="env.showTranslation && st.checked[s.id]" :text="s.text" :language="env.language" :given="s.translation || ''" />
           </div>
           <button v-if="!st.checked[s.id]" type="button" class="btn btn--sm btn--ghost" @click="check(s)">检查</button>
           <span v-else :class="['pill', s.blanks.every(isRight) ? 'good' : 'low']">{{ s.blanks.filter(isRight).length }} / {{ s.blanks.length }} 正确</span>
@@ -38,6 +38,7 @@
 import { computed, defineComponent, watch, type PropType } from 'vue'
 import AppIcon from '../ui/AppIcon.vue'
 import PlayButton from '../ui/PlayButton.vue'
+import SaveableText from '../ui/SaveableText.vue'
 import TranslationLine from '../ui/TranslationLine.vue'
 import type { Content, Env, Turn } from '../../api/models'
 import { playingId, playSequence, stop } from '../../lib/audio'
@@ -51,7 +52,7 @@ interface DictState { answers: Record<string, string>; checked: Record<string, b
 /** Cloze dictation: listen and fill in the blanked words. */
 export default defineComponent({
   name: 'DictationPractice',
-  components: { AppIcon, PlayButton, TranslationLine },
+  components: { AppIcon, PlayButton, SaveableText, TranslationLine },
   props: {
     content: { type: Object as PropType<Content>, required: true },
     env: { type: Object as PropType<Env>, required: true },
@@ -65,7 +66,7 @@ export default defineComponent({
     const sentences = computed(() => {
       let n = 0
       const raw = props.content.sentences || []
-      const merged: { text: string; blanks?: string[] }[] = []
+      const merged: { text: string; translation?: string; blanks?: string[] }[] = []
       const titleEnd = /(?:Mr|Mrs|Ms|Dr|Prof|St|Sr|Jr)\.\s*$/i
       for (const s of raw) {
         const text = (s.text || '').trim()
@@ -74,9 +75,13 @@ export default defineComponent({
           const prev = merged[merged.length - 1]
           const blanks = [...(prev.blanks || [])]
           for (const b of s.blanks || []) if (b && !blanks.includes(b)) blanks.push(b)
-          merged[merged.length - 1] = { text: `${prev.text} ${text}`.trim(), blanks }
+          merged[merged.length - 1] = {
+            text: `${prev.text} ${text}`.trim(),
+            blanks,
+            translation: [prev.translation, s.translation].filter(Boolean).join(' '),
+          }
         } else {
-          merged.push({ text, blanks: [...(s.blanks || [])] })
+          merged.push({ text, blanks: [...(s.blanks || [])], translation: s.translation || '' })
         }
       }
       return merged.map((s, i) => {

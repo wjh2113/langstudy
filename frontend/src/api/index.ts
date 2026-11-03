@@ -23,6 +23,9 @@ export interface TopicItem {
   hasNotes: boolean
   answered: number
   attempts: number
+  mine?: boolean
+  practiceId?: string | null
+  ownerName?: string | null
 }
 export interface NotesResponse { notes: Notes | null; generatedAt: string | null }
 export interface SharedReport { createdAt: string; content: Content; report: Report; owner: string }
@@ -68,6 +71,7 @@ export const api = {
   previous: (q: { language: string; level: string; mode: string; topic: string }) =>
     request<PreviousOut>('/sessions/previous?' + new URLSearchParams(q)),
   repeat: (id: string) => request<StartedSession>(`/sessions/${id}/repeat`, post()),
+  beginTopic: (id: string) => request<StartedSession>(`/sessions/${id}/begin`, post()),
   evaluate: (sessionId: string, turns: ApiTurn[], onTick?: (s: number) => void) =>
     runJob<Report>(request<JobRef>('/evaluate', post({ sessionId, turns })), onTick),
   saveProgress: (id: string, turns: ApiTurn[], state: PracticeState, keepalive = false) =>

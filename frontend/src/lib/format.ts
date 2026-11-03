@@ -1,6 +1,5 @@
-import type { Mode } from '../api/models'
 
-export const MODE_NAMES: Record<Mode, string> = {
+export const MODE_NAMES: Record<string, string> = {
   questions: '话题问答', dialogue: '情景对话', article: '短文', chat: '自由对话', dictation: '精听填空',
 }
 export const LANG_NAMES: Record<string, string> = { en: 'English', ja: '日本語' }

@@ -39,7 +39,7 @@
           <p v-if="card.exampleTranslation" class="flash__hint">例句：{{ card.exampleTranslation }}</p>
         </template>
 
-        <AnswerBox v-if="direction === 'speak' && !revealed" :key="'a' + card.id" compact :env="cardEnv" submit-label="核对"
+        <AnswerBox v-if="direction === 'speak' && !revealed" :key="'a' + card.id" compact :env="cardEnv" submit-label="核对" await-server
           placeholder="点麦克风说出来" @submit="checkSpoken" />
         <p v-if="checking" class="hint">正在评测发音…</p>
         <button type="button" v-if="direction === 'listen' && !revealed" class="btn btn--primary" @click="revealed = true">显示答案</button>

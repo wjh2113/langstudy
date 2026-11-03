@@ -28,7 +28,7 @@ export function useRevealed(): Record<string, boolean> {
 /** The turn as the API stores it: no blobs, no local blob: URLs, no derived display data. */
 export function toApiTurn(t: Turn): ApiTurn {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { audioBlob, diff, pronPending, ...rest } = t
+  const { audioBlob, diff, pronPending, serverText, ...rest } = t as Turn & { serverText?: unknown }
   return { ...rest, audioUrl: String(t.audioUrl || '').startsWith('/api/') ? t.audioUrl : '' }
 }
 

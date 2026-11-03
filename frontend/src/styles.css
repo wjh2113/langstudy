@@ -478,9 +478,10 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
   border: 1px solid var(--border-strong); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); overflow: hidden;
 }
 .upload-pick {
-  display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px dashed var(--border-strong); border-radius: 12px; cursor: pointer;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px 14px; border: 1px dashed var(--border-strong); border-radius: 12px; cursor: pointer;
 }
 .upload-pick input { max-width: 100%; }
+.upload-pick span { min-width: 0; overflow-wrap: anywhere; }
 .upload-text { width: 100%; margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); resize: vertical; }
 .upload-prompt { margin: 12px 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); }
 .upload-prompt summary { cursor: pointer; font-weight: 600; }
@@ -752,6 +753,24 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
   height: 36px; padding: 0 16px; border-radius: 999px; background: var(--primary-soft-2); color: var(--primary); font-size: 14px; font-weight: 500; font-family: var(--font-ui);
 }
 .target { min-width: 0; }
+.savable--open { -webkit-touch-callout: none; }
+
+.pick-menu {
+  position: fixed; z-index: 80; min-width: 148px; padding: 6px; border-radius: 12px; user-select: none;
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-lg);
+}
+.pick-menu button {
+  display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 40px;
+  border: 0; border-radius: 8px; background: var(--primary); color: #fff; font-size: 14px; font-weight: 600;
+}
+.pick-menu button:hover:not(:disabled) { background: var(--primary-hover); }
+.pick-menu button:disabled { opacity: .6; cursor: default; }
+.pick-menu button .icon { color: #fff; }
+.pick-note {
+  position: fixed; z-index: 81; left: 50%; bottom: 24px; transform: translateX(-50%); margin: 0; pointer-events: none;
+  padding: 10px 16px; border-radius: 999px; background: var(--text); color: #fff; font-size: 14px; box-shadow: var(--shadow);
+}
+.pick-note--err { background: var(--error); }
 
 /* answer box */
 .answer { display: flex; flex-direction: column; gap: 16px; border: 1px solid var(--border); border-radius: 14px; padding: 20px; background: var(--surface); }
@@ -786,7 +805,9 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
 .answer__text { display: grid; gap: 12px; }
 .answer--compact { border: 0; padding: 0; background: none; gap: 8px; }
 .answer-bar { display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 10px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface-2); }
-.answer-bar__text { flex: 1; min-width: 0; font-size: 15px; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.answer-bar__text { flex: 1; min-width: 0; font-size: 15px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 录音中实时字幕变长时只截断，不把这一栏撑高（否则下面的「影子跟读」会跟着跳）；识别中按钮禁用时显示等待光标 */
+.rec-btn:disabled { cursor: progress; }
 .answered { padding: 12px 16px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); display: grid; gap: 8px; }
 .answered__text { font-size: 17px; }
 .answered__meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px; }
@@ -900,7 +921,9 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
 .overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 20px; background: rgba(20, 22, 30, .38); backdrop-filter: blur(2px); }
 .overlay--drawer { place-items: stretch end; padding: 0; }
 .modal { width: min(520px, 100%); background: var(--surface); border-radius: 18px; padding: 24px 28px 28px; box-shadow: var(--shadow-lg); display: grid; gap: 12px; }
-.modal--wide { width: min(720px, 100%); }
+.modal--wide { width: min(720px, 100%); max-height: calc(100vh - 40px); overflow: auto; }
+.modal--wide .modal__actions { position: sticky; bottom: 0; z-index: 1; background: var(--surface); }
+.upload-files { max-height: 160px; overflow: auto; margin: 0; padding-left: 18px; }
 .drawer { width: min(500px, calc(100vw - 32px)); height: 100%; overflow: auto; background: var(--surface); padding: 24px 28px; box-shadow: var(--shadow-lg); animation: slide .2s ease-out; }
 @keyframes slide { from { transform: translateX(40px); opacity: .6; } }
 .modal__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
@@ -942,6 +965,22 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
 }
 .pitfall .icon { color: var(--warn); }
 .pitfall strong { color: var(--warn); padding-right: 12px; border-right: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); }
+
+/* 练习页上的重点单词和重点句型，比学习笔记更紧凑，不挡住练习本身 */
+.keypoints { display: flex; flex-direction: column; gap: 12px; }
+.keypoints__empty { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.keypoints__empty p { color: var(--text-2); }
+.keypoints__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.keypoints__head h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 650; }
+.keypoints__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; margin-top: 12px; }
+.kp-word, .kp-pattern { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding-top: 8px; border-top: 1px solid var(--border); }
+.kp-word__top, .kp-pattern__top { display: flex; align-items: center; gap: 8px; }
+.kp-word__term, .kp-pattern__term { font-size: 17px; font-weight: 700; line-height: 1.35; }
+.kp-word__meta { display: flex; align-items: center; gap: 8px; color: var(--text-3); font-size: 13px; flex-wrap: wrap; }
+.kp-word__meaning { font-size: 15px; }
+.kp-ex { font-size: 14px; color: var(--text-2); }
+.kp-ex .play--sm { display: inline-grid; vertical-align: middle; width: 22px; height: 22px; margin-left: 4px; }
+.kp-word .star, .kp-pattern .star { margin-left: auto; }
 .star {
   display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 8px; border-radius: 8px; border: 0;
   background: transparent; color: var(--text-3); font-size: 13px;
@@ -1236,7 +1275,7 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
   .sent__body { flex: 1 1 calc(100% - 100px); }
   .sent__more { padding: 0 14px 14px; }
   .sent__text { font-size: 18px; }
-  .quiz-grid, .note-grid, .word-grid { grid-template-columns: 1fr; }
+  .quiz-grid, .note-grid, .word-grid, .keypoints__grid { grid-template-columns: 1fr; }
   .notes__bar .seg { min-width: 0; width: 100%; }
   .dim-grid { grid-template-columns: 1fr 1fr; }
   .hero { grid-template-columns: 1fr; }

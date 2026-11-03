@@ -66,7 +66,7 @@ export interface InviteReq {
 
 export interface Job {
   id: string
-  kind: "generate" | "evaluate" | "notes"
+  kind: "generate" | "evaluate" | "notes" | "course"
   status: "pending" | "running" | "done" | "error"
   result?: unknown | null
   error?: string | null
@@ -169,6 +169,26 @@ export interface TTSReq {
   voiceIndex?: number
   rate?: number
   accent?: string
+}
+
+/** 一份话题材料。练习进度只属于当前用户，看不到别人的作答和成绩。 */
+export interface TopicSummary {
+  id: string
+  language?: string | null
+  level?: string | null
+  mode?: string | null
+  topic?: string | null
+  title?: string | null
+  overall?: number | null
+  createdAt: string
+  updatedAt?: string | null
+  done: boolean
+  hasNotes: boolean
+  answered?: number
+  attempts?: number
+  mine?: boolean
+  practiceId?: string | null
+  ownerName?: string | null
 }
 
 export interface TranslateOut {

@@ -25,7 +25,7 @@
       </div>
       <div class="setting-row">
         <AppIcon name="translate" />
-        <div><h3>显示中文翻译</h3><p>在原文下方显示中文（用到时才翻译）</p></div>
+        <div><h3>显示中文翻译</h3><p>在原文下方显示生成时写好的中文</p></div>
         <ToggleSwitch :model-value="env.showTranslation" label="显示中文翻译" @update:model-value="(v) => setDisplay({ showTranslation: v })" />
       </div>
       <div v-if="handsFreeModes.includes(mode)" class="setting-row">

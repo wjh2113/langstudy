@@ -5,17 +5,10 @@
       <h2 v-else class="section-title"><AppIcon name="book" /> 学习笔记</h2>
       <div v-if="hasNotes && !readonly" class="notes__actions">
         <span v-if="data && data.generatedAt" class="muted">生成于 {{ dateTime(data.generatedAt) }} · 已保存</span>
-        <template v-if="confirming">
-          <span class="muted">重新生成会替换当前笔记</span>
-          <button type="button" class="btn btn--sm btn--ghost" @click="confirming = false">取消</button>
-          <button type="button" class="btn btn--sm btn--primary" :disabled="busy" @click="generate">确定</button>
-        </template>
-        <template v-else>
-          <button v-if="tab === 'vocabulary' && n.vocabulary.length" type="button" class="btn btn--sm btn--ghost" :disabled="savingAll || allSaved" @click="saveAll">
-            {{ savingAll ? '正在加入…' : allSaved ? '已在生词本' : '全部加入生词本' }}
-          </button>
-          <button v-if="!locked" type="button" class="link" :disabled="busy" @click="confirming = true"><AppIcon name="rotate" :size="16" /> 重新生成</button>
-        </template>
+        <button v-if="tab === 'vocabulary' && n.vocabulary.length" type="button" class="btn btn--sm btn--ghost" :disabled="savingAll || allSaved" @click="saveAll">
+          {{ savingAll ? '正在加入…' : allSaved ? '已在生词本' : '全部加入生词本' }}
+        </button>
+        <button v-if="!locked" type="button" class="link" :disabled="busy" @click="confirming = true"><AppIcon name="rotate" :size="16" /> 重新生成</button>
       </div>
     </div>
 
@@ -89,12 +82,22 @@
       </div>
     </template>
     <p v-if="error" class="error">{{ error }}</p>
+
+    <ModalDialog :open="confirming" title="重新生成笔记" icon="rotate" @close="confirming = false">
+      <p>会再调用一次大模型，按这篇练习重新整理单词、语法和句型，并替换现在这份笔记。</p>
+      <p class="muted">确定后才会开始，取消则不会调用模型。</p>
+      <div class="modal__actions">
+        <button type="button" class="btn btn--ghost" :disabled="busy" @click="confirming = false">取消</button>
+        <button type="button" class="btn btn--primary" :disabled="busy" @click="generate">重新生成</button>
+      </div>
+    </ModalDialog>
   </section>
 </template>
 
 <script lang="ts">
 import { computed, defineComponent, onMounted, ref, type PropType } from 'vue'
 import AppIcon from '../ui/AppIcon.vue'
+import ModalDialog from '../ui/ModalDialog.vue'
 import PlayButton from '../ui/PlayButton.vue'
 import SegControl from '../ui/SegControl.vue'
 import StarButton from '../ui/StarButton.vue'
@@ -108,7 +111,7 @@ let seq = 0
 /** Saved study notes (vocabulary / grammar / sentence patterns) for one practice session. */
 export default defineComponent({
   name: 'StudyNotes',
-  components: { AppIcon, PlayButton, SegControl, StarButton },
+  components: { AppIcon, ModalDialog, PlayButton, SegControl, StarButton },
   props: {
     sessionId: { type: String, required: true },
     env: { type: Object as PropType<Env>, required: true },

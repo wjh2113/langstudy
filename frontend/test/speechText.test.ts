@@ -37,4 +37,15 @@ assert.ok(nicoleParts.every((p) => /[A-Za-z]/.test(p)), nicoleParts.join(' | '))
 assert.ok(!nicoleParts.some((p) => /^[.\s]+$/.test(p)), nicoleParts.join(' | '))
 assert.ok(nicoleParts.some((p) => /Mr\.\s*Stein/.test(p)), nicoleParts.join(' | '))
 
+// No comma: never cut "…and two | glasses…" in the middle of a phrase.
+const wine = 'We also asked for a bottle of sparkling water and two glasses of white wine.'
+const wineParts = splitSentences(wine)
+assert.ok(!wineParts.some((p) => /\btwo$/.test(p)), wineParts.join(' | '))
+assert.ok(wineParts.every((p) => !/^glasses/.test(p)), wineParts.join(' | '))
+assert.ok(wineParts.length === 1 || wineParts[1].startsWith('and '), wineParts.join(' | '))
+
+// Fits in one clip and has no comma or conjunction: keep it whole.
+const plain = 'The waiter brought us a basket of warm bread with olive oil on the side.'
+assert.deepEqual(splitSentences(plain), [plain])
+
 console.log('ok splitSentences')

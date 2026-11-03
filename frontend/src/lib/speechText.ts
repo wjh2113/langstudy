@@ -5,6 +5,11 @@
  */
 
 const ABBREV = /^(?:Mr|Mrs|Ms|Dr|Prof|St|Sr|Jr|vs|etc|e\.g|i\.e|U\.S|U\.K)\.?$/i
+// Words that start a new phrase. Cutting just before one keeps "and two glasses" together
+// instead of "…and two | glasses…", which TTS reads as two half sentences.
+const PHRASE_START = /\s(?=(?:and|but|or|so|because|when|while|where|which|who|whose|if|though|although|after|before|until|since|then|unless|whereas)\b)/gi
+const MIN_HEAD = 20
+const MIN_TAIL = 12
 const ONLY_PUNCT = /^[。．.!！？?；;、，,\s'’"”]+$/
 
 export function splitSentences(text: string, max = 120, firstMax = 60): string[] {
@@ -39,9 +44,15 @@ export function splitSentences(text: string, max = 120, firstMax = 60): string[]
       const lim = limit()
       const comma = Math.max(p.lastIndexOf('，', lim), p.lastIndexOf(',', lim), p.lastIndexOf('、', lim))
       let at = comma >= 12 ? comma + 1 : lim
+      // No comma: cut before a conjunction / relative word ("water | and two glasses").
+      const phrase = comma < 12 ? phraseCut(p, lim) : -1
+      if (phrase > 0) at = phrase
+      // A whole sentence that still fits in `max` is read as one clip rather than cut mid-phrase:
+      // a slightly later first sound beats "two | glasses".
+      else if (comma < 12 && p.length <= max) break
       // Hard cut: prefer the last space so we don't slice off a trailing "." into its own piece.
       // Skip spaces after Mr./Dr. so "Mr. Stein" stays together.
-      if (comma < 12) {
+      if (comma < 12 && phrase <= 0) {
         let space = p.lastIndexOf(' ', lim)
         while (space >= 12) {
           const leftWord = p.slice(0, space).trim().split(/\s/).pop() || ''
@@ -54,6 +65,11 @@ export function splitSentences(text: string, max = 120, firstMax = 60): string[]
       p = p.slice(at).trimStart()
     }
     if (!p) continue
+    // Fell out of the loop on purpose (sentence fits in max, no good cut): keep it whole.
+    if (p.length > limit() && !cur) {
+      push(p)
+      continue
+    }
     if (ONLY_PUNCT.test(p)) {
       if (cur) cur += p
       else if (out.length) out[out.length - 1] = `${out[out.length - 1]}${p}`.trim()
@@ -69,6 +85,19 @@ export function splitSentences(text: string, max = 120, firstMax = 60): string[]
   }
   if (cur.trim()) push(cur)
   return out.filter((s) => /[\p{L}\p{N}]/u.test(s))
+}
+
+/** Index just after the space that precedes the last phrase-starting word within `lim`, or -1. */
+function phraseCut(p: string, lim: number): number {
+  let best = -1
+  PHRASE_START.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = PHRASE_START.exec(p))) {
+    const at = m.index + 1
+    if (at > lim) break
+    if (at >= MIN_HEAD && p.length - at >= MIN_TAIL) best = at
+  }
+  return best
 }
 
 function splitMarks(t: string): string[] {

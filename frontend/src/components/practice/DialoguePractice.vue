@@ -31,17 +31,17 @@
             <div class="msg__bubble">
               <template v-if="l.role === st.myRole">
                 <template v-if="turnOf(l.id)">
-                  <p :class="env.textClass">{{ turnOf(l.id)?.answer }}</p>
+                  <SaveableText :class="env.textClass" :language="env.language" :sentence="turnOf(l.id)?.answer || ''">{{ turnOf(l.id)?.answer }}</SaveableText>
                 </template>
                 <template v-else-if="l.idx === st.idx">
-                  <div v-if="st.free" class="msg__hint"><span class="muted">意思：</span><TranslationLine :text="l.text" :language="env.language" /></div>
-                  <TargetText v-else :text="l.text" :env="env" :revealed="true" />
+                  <div v-if="st.free" class="msg__hint"><span class="muted">意思：</span><TranslationLine :text="l.text" :language="env.language" :given="l.translation || ''" /></div>
+                  <TargetText v-else :text="l.text" :translation="l.translation || ''" :env="env" :revealed="true" />
                 </template>
                 <p v-else class="muted">（跳过）</p>
               </template>
               <template v-else>
                 <PlayButton :id="l.id" :text="l.text" :env="env" :voice-index="voiceOf(l.role)" size="sm" @play="tracker.count(l.id)" />
-                <TargetText :text="l.text" :env="env" :revealed="!!revealed[l.id]" @reveal="revealed[l.id] = true" />
+                <TargetText :text="l.text" :translation="l.translation || ''" :env="env" :revealed="!!revealed[l.id]" @reveal="revealed[l.id] = true" />
               </template>
             </div>
             <span class="msg__meta">{{ l.role === st.myRole ? '你 · ' : '' }}{{ roleName(l.role) }}</span>
@@ -51,9 +51,9 @@
               <div class="shadow-card__body">
                 <div class="shadow-card__head">
                   <strong>跟读结果</strong>
-                  <PronBadge :turn="turnOf(l.id)" />
+                  <PronBadge :turn="turnOf(l.id)!" />
                 </div>
-                <DiffText v-if="turnOf(l.id)?.diff" :tokens="turnOf(l.id).diff.tokens" :env="env" />
+                <DiffText v-if="turnOf(l.id)?.diff" :tokens="turnOf(l.id)?.diff?.tokens || []" :env="env" />
               </div>
             </div>
           </div>
@@ -87,6 +87,7 @@ import AvatarFigure from '../ui/AvatarFigure.vue'
 import DiffText from '../ui/DiffText.vue'
 import PlayButton from '../ui/PlayButton.vue'
 import PronBadge from '../ui/PronBadge.vue'
+import SaveableText from '../ui/SaveableText.vue'
 import TargetText from '../ui/TargetText.vue'
 import TranslationLine from '../ui/TranslationLine.vue'
 import type { Content, Env, Turn } from '../../api/models'
@@ -98,7 +99,7 @@ interface DState { myRole: string | null; idx: number; free: boolean }
 
 export default defineComponent({
   name: 'DialoguePractice',
-  components: { AnswerBox, AppIcon, AvatarFigure, DiffText, PlayButton, PronBadge, TargetText, TranslationLine },
+  components: { AnswerBox, AppIcon, AvatarFigure, DiffText, PlayButton, PronBadge, SaveableText, TargetText, TranslationLine },
   props: {
     content: { type: Object as PropType<Content>, required: true },
     env: { type: Object as PropType<Env>, required: true },

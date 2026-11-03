@@ -17,9 +17,9 @@
             <div class="msg__bubble">
               <template v-if="m.role === 'ai'">
                 <PlayButton :id="m.id" :text="m.text" :env="env" :voice-index="env.voiceIndex" size="sm" @play="tracker.count(m.id)" />
-                <TargetText :text="m.text" :env="env" :revealed="!!revealed[m.id] || i < st.messages.length - 1" @reveal="revealed[m.id] = true" />
+                <TargetText :text="m.text" :translation="m.translation || ''" :env="env" :revealed="!!revealed[m.id] || i < st.messages.length - 1" @reveal="revealed[m.id] = true" />
               </template>
-              <p v-else :class="env.textClass">{{ m.text }}</p>
+              <SaveableText v-else :class="env.textClass" :language="env.language" :sentence="m.text">{{ m.text }}</SaveableText>
             </div>
             <span class="msg__meta">{{ m.role === 'ai' ? aiRole.name : '你' }}</span>
           </div>
@@ -30,7 +30,7 @@
       </div>
 
       <div v-if="!st.ended && !thinking && !error && lastIsAi" class="dlg__input">
-        <AnswerBox :key="'c' + userCount" compact :env="env" submit-label="发送" :hands-free="env.handsFree" :listen-signal="listen"
+        <AnswerBox :key="'c' + userCount" compact :env="env" submit-label="发送" await-server :hands-free="env.handsFree" :listen-signal="listen"
           placeholder="点击录音，说出你的回答…" @submit="send" />
         <button type="button" class="link link--muted" @click="st.ended = true">结束对话</button>
       </div>
@@ -47,19 +47,20 @@ import AnswerBox, { type AnswerPayload } from './AnswerBox.vue'
 import AppIcon from '../ui/AppIcon.vue'
 import AvatarFigure from '../ui/AvatarFigure.vue'
 import PlayButton from '../ui/PlayButton.vue'
+import SaveableText from '../ui/SaveableText.vue'
 import TargetText from '../ui/TargetText.vue'
 import { api } from '../../api'
 import type { Content, Env, Turn } from '../../api/models'
 import { play, prefetch } from '../../lib/audio'
 import { SESSION_ID, useModeState, useRevealed } from '../../lib/practice'
 
-interface Msg { id: string; role: 'ai' | 'user'; text: string }
+interface Msg { id: string; role: 'ai' | 'user'; text: string; translation?: string }
 interface CState { messages: Msg[]; ended: boolean; naturalEnd: boolean; summary: string }
 
 /** Open-ended conversation: the AI stays in role and answers whatever the learner says. */
 export default defineComponent({
   name: 'ChatPractice',
-  components: { AnswerBox, AppIcon, AvatarFigure, PlayButton, TargetText },
+  components: { AnswerBox, AppIcon, AvatarFigure, PlayButton, SaveableText, TargetText },
   props: {
     content: { type: Object as PropType<Content>, required: true },
     env: { type: Object as PropType<Env>, required: true },
@@ -71,7 +72,7 @@ export default defineComponent({
     const sessionId = inject(SESSION_ID) as string
     const revealed = useRevealed()
     const st = useModeState<CState>('chat', {
-      messages: [{ id: 'ai0', role: 'ai', text: props.content.opening || '' }], ended: false, naturalEnd: false, summary: '',
+      messages: [{ id: 'ai0', role: 'ai', text: props.content.opening || '', translation: props.content.openingTranslation || '' }], ended: false, naturalEnd: false, summary: '',
     })
     const aiRole = computed(() => props.content.aiRole || { id: 'ai', name: 'AI' })
     const userRole = computed(() => props.content.userRole || { id: 'me', name: '你' })
@@ -115,7 +116,7 @@ export default defineComponent({
       try {
         const history = st.messages.map((m) => ({ role: m.role, text: m.text }))
         const r = await api.chatReply({ sessionId, history, summary: st.summary })
-        const m: Msg = { id: `ai${st.messages.length}`, role: 'ai', text: r.text }
+        const m: Msg = { id: `ai${st.messages.length}`, role: 'ai', text: r.text, translation: r.translation || '' }
         st.messages = [...st.messages, m]
         if (r.summary) st.summary = r.summary // older rounds travel as this one-line summary
         if (r.end) { st.ended = true; st.naturalEnd = true }
