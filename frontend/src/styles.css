@@ -673,7 +673,8 @@ textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px
 .practice__flow { display: flex; flex-direction: column; gap: 16px; }
 .practice__flow > div { display: flex; flex-direction: column; gap: 16px; }
 .practice__titlebar { display: flex; align-items: center; gap: 12px; }
-.practice__title { flex: 1; font-size: 22px; font-weight: 600; }
+.practice__title { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 22px; font-weight: 600; }
+.practice__settings-btn { flex-shrink: 0; }
 .practice__settings-btn { display: none; }
 .practice__aside { position: sticky; top: calc(var(--header-h) + 20px); padding: 28px; max-height: calc(100vh - var(--header-h) - 40px); overflow: auto; }
 

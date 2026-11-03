@@ -15,7 +15,7 @@
     <div class="practice__body">
       <main class="practice__main">
         <div class="practice__titlebar">
-          <h1 :class="['practice__title', env.textClass]"><template v-if="!['article', 'dictation'].includes(content.mode)">{{ content.title }}</template></h1>
+          <h1 class="practice__title">{{ content.topic || content.title || '未命名话题' }}</h1>
           <button type="button" class="btn btn--ghost btn--sm practice__settings-btn" @click="drawer = true">
             <AppIcon name="settings" :size="16" /> 练习设置
           </button>

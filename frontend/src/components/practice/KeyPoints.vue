@@ -15,7 +15,7 @@
       <section class="card keypoints__block">
         <header class="keypoints__head">
           <h2><AppIcon name="book" :size="16" /> 重点单词</h2>
-          <button type="button" class="link" @click="wordsOpen = !wordsOpen">{{ wordsOpen ? '收起' : '展开' }}</button>
+          <button type="button" class="link" :aria-expanded="wordsOpen" @click="wordsOpen = !wordsOpen">{{ wordsOpen ? '收起' : '展开' }}</button>
         </header>
         <p v-if="!vocab.length" class="hint">还没有重点单词，可以到「学习笔记」里重新整理。</p>
         <div v-show="wordsOpen && vocab.length" class="keypoints__grid">
@@ -42,7 +42,7 @@
       <section class="card keypoints__block">
         <header class="keypoints__head">
           <h2><AppIcon name="chat-dots" :size="16" /> 重点句型</h2>
-          <button type="button" class="link" @click="patternsOpen = !patternsOpen">{{ patternsOpen ? '收起' : '展开' }}</button>
+          <button type="button" class="link" :aria-expanded="patternsOpen" @click="patternsOpen = !patternsOpen">{{ patternsOpen ? '收起' : '展开' }}</button>
         </header>
         <p v-if="!patterns.length" class="hint">还没有重点句型，可以到「学习笔记」里重新整理。</p>
         <div v-show="patternsOpen && patterns.length" class="keypoints__grid">
@@ -96,8 +96,8 @@ export default defineComponent({
     const busy = ref(false)
     const waited = ref(0)
     const error = ref('')
-    const wordsOpen = ref(true)
-    const patternsOpen = ref(true)
+    const wordsOpen = ref(false)
+    const patternsOpen = ref(false)
     const n = computed(() => (data.value?.notes || { summary: '', vocabulary: [], grammar: [], patterns: [] }) as Notes)
     const vocab = computed(() => n.value.vocabulary || [])
     const patterns = computed(() => n.value.patterns || [])
